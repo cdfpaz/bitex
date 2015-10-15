@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!--[if lt IE 9]>
+  <script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script>
+  <![endif]-->
+
+  <!--Bootstrap-->
+  <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.1/css/bootstrap-combined.min.css" rel="stylesheet">
+  <link href="//netdna.bootstrapcdn.com/font-awesome/3.0.2/css/font-awesome.css" rel="stylesheet">
+
+  <link href="/css/bootstrap-docs.css" rel="stylesheet">
+
+  <link href="/css/fuelux.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+
+  <!-- jQuery, Bootstrap, Parsley -->
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.0/jquery.min.js" type="text/javascript"></script>
+  <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.1/js/bootstrap.min.js"></script>
+  <script src="/js/parsley.min.js"></script>
+
+  <!-- admin application -->
+  <script src="/js/bitex_app_admin.compiled.pt_BR.js?v1" type="text/javascript"></script>
+
+</head>
+<body class="ws-not-connected bitex-not-logged">
+
+<div class="navbar navbar navbar-fixed-top">
+  <div class="navbar-inner">
+    <div class="container">
+      <button type="button" class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="brand" href="/">BitEx</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="row">
+
+    <section id="websocket" class="bitex-hide-if-ws-connected" >
+      <div class="form-signin">
+        <h2 class="form-signin-heading">Conexão</h2>
+        <input id="ws_url" type="text" class="input-block-level" placeholder="WebSocket URL" value="{{ ws_url }}">
+        <button id="btn_ws_connect" data-loading-text="Aguarde..." class="btn btn-large btn-primary" type="submit">Conectar</button>
+      </div>
+    </section>
+
+    <section id="login" class="bitex-display-if-ws-connected bitex-hide-if-logged">
+      <div class="form-signin">
+        <h2 class="form-signin-heading">Login</h2>
+        <input id="id_username" type="text" class="input-block-level" placeholder="Email address">
+        <input id="id_password" type="password" class="input-block-level" placeholder="Password">
+        <button id="id_btn_login" class="btn btn-large btn-primary" type="submit">Login</button>
+      </div>
+    </section>
+
+
+    <div class="span3 bs-docs-sidebar bitex-display-if-logged">
+      <ul class="nav nav-list bs-docs-sidenav affix">
+        <li><a href="" data-switch-view="boleto_list"><i class="icon-chevron-right"></i> Boletos</a></li>
+        <li><a href="" data-switch-view="user_list"><i class="icon-chevron-right"></i> User List</a></li>
+        <li><a href="" data-switch-view="withdraw_requests"><i class="icon-chevron-right"></i> Withdraws</a></li>
+        <li><a href="" data-switch-view="deposit_list"><i class="icon-chevron-right"></i> Deposits</a></li>
+        <li><a href="" data-switch-view="order_book_btcbrl"><i class="icon-chevron-right"></i> BTCBRL market</a></li>
+      </ul>
+    </div>
+
+    <div class="span9 bitex-display-if-logged" style="margin-top: 30px;">
+      <div id="withdraw_requests">
+        <div id="withdraw_requests_data_grid"  class="fuelux" style="height: 420px;width:100%;margin-bottom:20px;">
+          <table class="table table-bordered datagrid datagrid-stretch-header">
+            <thead>
+            <tr>
+              <th colspan="4">
+                <span class="datagrid-header-title">Withdraw requests</span>
+              </th>
+            </tr>
+            </thead>
+          </table>
+          <div class="datagrid-stretch-wrapper" style="height: 320px;">
+            <table class="table table-bordered datagrid">
+              <tbody></tbody>
+            </table>
+          </div>
+          <table class="table table-bordered datagrid datagrid-stretch-footer">
+            <tfoot>
+            <tr>
+              <th colspan="4">
+                <div class="datagrid-footer-left" style="visibility: visible;">
+                  <div class="grid-controls">
+                      <span>
+                        <span class="grid-start"></span> -
+                        <span class="grid-end"></span>
+                      </span>
+                  </div>
+                </div>
+                <div class="datagrid-footer-right" style="visibility: visible;">
+                  <div class="grid-pager">
+                    <button type="button" class="btn grid-prevpage"><i class="icon-chevron-left"></i></button>
+                    <button type="button" class="btn grid-nextpage"><i class="icon-chevron-right"></i></button>
+                  </div>
+                </div>
+              </th>
+            </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div id="order_book_btcbrl">
+      <div class="row-fluid">
+        <div class="span6">
+          <div class="text-center"><h4>Ofertas de Compra</h4></div>
+          <table id="order_book_bid"  class="table">
+            <thead>
+            <tr>
+              <th>Comprador</th>
+              <th>Quantidade ( BTC )</th>
+              <th>Preço ( R$ )</th>
+            </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+        <div class="span6">
+          <div class="text-center"><h4>Ofertas de Venda</h4></div>
+          <table id="order_book_offer"  class="table">
+            <thead>
+            <tr>
+              <th>Preço ( R$ )</th>
+              <th>Quantidade (BTC)</th>
+              <th>Vendedor</th>
+            </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+      <div id="deposit_list">
+        <div id="deposit_list_data_grid"  class="fuelux" style="height: 420px;width:100%;margin-bottom:20px;">
+          <table class="table table-bordered datagrid datagrid-stretch-header">
+            <thead>
+            <tr>
+              <th colspan="4">
+                <span class="datagrid-header-title">Deposit List</span>
+              </th>
+            </tr>
+            </thead>
+          </table>
+          <div class="datagrid-stretch-wrapper" style="height: 320px;">
+            <table class="table table-bordered datagrid">
+              <tbody></tbody>
+            </table>
+          </div>
+          <table class="table table-bordered datagrid datagrid-stretch-footer">
+            <tfoot>
+              <tr>
+                <th colspan="4">
+                  <div class="datagrid-footer-left" style="visibility: visible;">
+                    <div class="grid-controls">
+                      <span>
+                        <span class="grid-start"></span> -
+                        <span class="grid-end"></span>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="datagrid-footer-right" style="visibility: visible;">
+                    <div class="grid-pager">
+                      <button type="button" class="btn grid-prevpage"><i class="icon-chevron-left"></i></button>
+                      <button type="button" class="btn grid-nextpage"><i class="icon-chevron-right"></i></button>
+                    </div>
+                  </div>
+                </th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div id="user_list">
+        <div id="user_list_data_grid"  class="fuelux" style="height: 420px;width:100%;margin-bottom:20px;">
+          <table class="table table-bordered datagrid datagrid-stretch-header">
+            <thead>
+            <tr>
+              <th colspan="4">
+                <span class="datagrid-header-title">User's</span>
+              </th>
+            </tr>
+            </thead>
+          </table>
+          <div class="datagrid-stretch-wrapper" style="height: 320px;">
+            <table class="table table-bordered datagrid">
+              <tbody></tbody>
+            </table>
+          </div>
+          <table class="table table-bordered datagrid datagrid-stretch-footer">
+            <tfoot>
+              <tr>
+                <th colspan="4">
+                  <div class="datagrid-footer-left" style="visibility: visible;">
+                    <div class="grid-controls">
+                      <span>
+                        <span class="grid-start"></span> -
+                        <span class="grid-end"></span>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="datagrid-footer-right" style="visibility: visible;">
+                    <div class="grid-pager">
+                      <button type="button" class="btn grid-prevpage"><i class="icon-chevron-left"></i></button>
+                      <button type="button" class="btn grid-nextpage"><i class="icon-chevron-right"></i></button>
+                    </div>
+                  </div>
+                </th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div id="boleto_list">
+        <div id="boleto_list_data_grid"  class="fuelux" style="height: 420px;width:100%;margin-bottom:20px;">
+          <table class="table table-bordered datagrid datagrid-stretch-header">
+            <thead>
+            <tr>
+              <th colspan="4">
+                <span class="datagrid-header-title">Boletos</span>
+              </th>
+            </tr>
+            </thead>
+          </table>
+          <div class="datagrid-stretch-wrapper" style="height: 320px;">
+            <table class="table table-bordered datagrid">
+              <tbody></tbody>
+            </table>
+          </div>
+          <table class="table table-bordered datagrid datagrid-stretch-footer">
+            <tfoot>
+            <tr>
+              <th colspan="4">
+                <div class="datagrid-footer-left" style="visibility: visible;">
+                  <div class="grid-controls">
+                      <span>
+                        <span class="grid-start"></span> -
+                        <span class="grid-end"></span>
+                      </span>
+                  </div>
+                </div>
+                <div class="datagrid-footer-right" style="visibility: visible;">
+                  <div class="grid-pager">
+                    <button type="button" class="btn grid-prevpage"><i class="icon-chevron-left"></i></button>
+                    <button type="button" class="btn grid-nextpage"><i class="icon-chevron-right"></i></button>
+                  </div>
+                </div>
+              </th>
+            </tr>
+            </tfoot>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="deposit_modal" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+  <div class="modal-header">
+    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+    <h3>Deposit</h3>
+  </div>
+  <div class="modal-body">
+    <form id="deposit-form" data-validate="parsley">
+      <label for="id_deposit_user_id">User ID * :</label>
+      <input id="id_deposit_user_id" type="text" placeholder="UserID">
+
+      <label for="id_deposit_currency">Currency * :</label>
+      <input id="id_deposit_currency" type="text" placeholder="Currency" data-required="true" data-rangelength="[3,3]" data-type="alphanum">
+
+      <label for="id_deposit_amount">Amount * :</label>
+      <input id="id_deposit_amount" type="text" placeholder="Amount" data-required="true" data-type="number" >
+
+      <label for="id_deposit_origin">Origin * :</label>
+      <textarea id="id_deposit_origin" data-required="true" placeholder="Message">Depositado manualmente pelo administrador</textarea>
+    </form>
+  </div>
+  <div class="modal-footer">
+    <button  id="id_deposit" data-dismiss="modal" aria-hidden="true" class="btn btn-primary">Deposit</button>
+    <button class="btn" data-dismiss="modal" aria-hidden="true">Close</button>
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="no_websockets_modal" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+  <div class="modal-header">
+    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+    <h3>Seu Browser não suporta WebSockets</h3>
+  </div>
+  <div class="modal-body">
+    <p>Por favor, faça o download do Google Chrome / Firefox ou IE 10</p>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" data-dismiss="modal" aria-hidden="true">Close</button>
+  </div>
+</div>
+
+<div id="error_websocket_modal" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+  <div class="modal-header">
+    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+    <h3 id="myModalLabel">Erro se conectando ao servidor ....</h3>
+  </div>
+  <div class="modal-body">
+    <p id="websocket_error_msg"></p>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" data-dismiss="modal" aria-hidden="true">Close</button>
+  </div>
+</div>
+
+
+<footer class="footer">
+  <div class="container">
+    <p>Developed by <a href="http://youtube.com/user/pinhopro" target="_blank">Rodrigo Souza</a> and <a href="http://about.me/cderivan" target="_blank">Clebson Derivan</a></p>
+  </div>
+</footer>
+
+<script>
+  bitex.app.admin();
+</script>
+
+</body>
+</html>
