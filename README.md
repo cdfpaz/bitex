@@ -70,6 +70,7 @@ Bitex stands for Bitcoin EXchnage and it was the first that we came up it name o
 **Code released under [the GNU GPL license](https://github.com/pinhopro/bitex/blob/master/LICENSE).**
 
 Copyright 2014 BitEx, LTDA. BitEx is a trademark maintained by BitEx, LTDA.
+Bitex - Bolsa Brasileira de Moedas Criptografadas is a company of Clebson Derivan
 
 **VIOLATORS OF THE GNU GPL LICENSE WILL BE PROSECUTED TO THE FULL EXTENT OF THE LAW**
 **FREE SOFTWARE FOR FREE PEOPLE**
