@@ -1,22 +1,26 @@
+import ssl
 import logging
 
 import tornado.ioloop
 import tornado.web
-from tornado.options import  options
+import sys
+
 from tornado import httpclient
 from functools import partial
 
-
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import scoped_session, sessionmaker
 
 from create_receive_handler import ReceiveHandler
 from wallet_notify_handler import  WalletNotifyHandler
 from block_notify_handler import BlockNotifyHandler
 
-from bitcoinrpc.authproxy import AuthServiceProxy
+from authproxy import AuthServiceProxy
 
 class ApiReceiveApplication(tornado.web.Application):
-  def __init__(self):
+  def __init__(self, options, instance_name):
+    self.options = options
+    self.instance_name = instance_name
     handlers = [
       (r"/api/receive", ReceiveHandler),
       (r"/api/walletnotify/(?P<txid>[^\/]+)", WalletNotifyHandler),
@@ -27,20 +31,28 @@ class ApiReceiveApplication(tornado.web.Application):
     )
     tornado.web.Application.__init__(self, handlers, **settings)
 
-    input_log_file_handler = logging.handlers.TimedRotatingFileHandler( options.log, when='MIDNIGHT')
+    input_log_file_handler = logging.handlers.TimedRotatingFileHandler( self.options.log, when='MIDNIGHT')
     formatter = logging.Formatter('%(asctime)s - %(message)s')
     input_log_file_handler.setFormatter(formatter)
 
-    self.bitcoind = AuthServiceProxy(options.rpc_url, options.rpc_username, options.rpc_password )
+    self.bitcoind = AuthServiceProxy(self.options.rpc_url )
     self.paytxfee = self.bitcoind.getinfo()['paytxfee']
 
 
-    self.replay_logger = logging.getLogger("REPLAY")
-    self.replay_logger.setLevel(logging.INFO)
+    self.replay_logger = logging.getLogger(self.instance_name)
+    self.replay_logger.setLevel(logging.DEBUG)
     self.replay_logger.addHandler(input_log_file_handler)
     self.replay_logger.info('START')
 
-    from models import engine, db_bootstrap
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(logging.DEBUG)
+    ch.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    self.replay_logger.addHandler(ch)
+
+
+    from models import Base, db_bootstrap
+    engine = create_engine( self.options.db_engine, echo=self.options.db_echo)
+    Base.metadata.create_all(engine)
     self.db_session = scoped_session(sessionmaker(bind=engine))
     db_bootstrap(self.db_session)
 
@@ -49,8 +61,8 @@ class ApiReceiveApplication(tornado.web.Application):
   def invoke_callback_url(self, forwarding_address):
     url = forwarding_address.get_callback_url()
     self.log('EXECUTE', 'curl ' + url)
-
-    http_client = httpclient.AsyncHTTPClient()
+    context = ssl._create_unverified_context()
+    http_client = httpclient.AsyncHTTPClient(defaults=dict(ssl_options=context))
     http_client.fetch(url, partial(self.on_handle_callback_url, forwarding_address.id ))
 
 
@@ -71,6 +83,9 @@ class ApiReceiveApplication(tornado.web.Application):
 
 
   def log(self, command, key, value=None):
+    #if len(logging.getLogger().handlers):
+    #  logging.getLogger().handlers = []  # workaround to avoid stdout logging from the root logger
+
     log_msg = command + ',' + key
     if value:
       try:
@@ -90,12 +105,11 @@ class ApiReceiveApplication(tornado.web.Application):
 
   def log_start_data(self):
     self.log('PARAM','BEGIN')
-    self.log('PARAM','port'                  ,options.port)
-    self.log('PARAM','log'                   ,options.log)
-    self.log('PARAM','db_echo'               ,options.db_echo)
-    self.log('PARAM','db_engine'             ,options.db_engine)
-    self.log('PARAM','rpc_url'               ,options.rpc_url)
-    self.log('PARAM','rpc_username'          ,options.rpc_username)
+    self.log('PARAM','port'                  ,self.options.port)
+    self.log('PARAM','log'                   ,self.options.log)
+    self.log('PARAM','db_echo'               ,self.options.db_echo)
+    self.log('PARAM','db_engine'             ,self.options.db_engine)
+    self.log('PARAM','rpc_url'               ,self.options.rpc_url)
     self.log('PARAM','END')
 
     from models import ForwardingAddress

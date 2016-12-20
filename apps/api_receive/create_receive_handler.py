@@ -7,9 +7,12 @@ from tornado.escape import json_encode
 
 class ReceiveHandler(tornado.web.RequestHandler):
   def get(self, *args, **kwargs):
+
     method = self.get_argument("method")
     address = self.get_argument("address")
     callback = self.get_argument("callback")
+    self.application.log('HTTP_GET', '/api/receive/' + self.request.query )
+
 
     if method != 'create':
       raise tornado.web.MissingArgumentError('method')
@@ -17,6 +20,7 @@ class ReceiveHandler(tornado.web.RequestHandler):
     input_address = self.application.bitcoind.getnewaddress('')
 
     from models import ForwardingAddress
+    self.application.log('CREATE', 'FORWARDING_ADDRESS', ",".join([address, input_address, callback]) )
     ForwardingAddress.create(self.application.db_session, address, input_address, callback)
 
     result = {

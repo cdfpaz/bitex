@@ -1,14 +1,9 @@
-from sqlalchemy import create_engine, func
-from sqlalchemy.sql.expression import or_
 from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import scoped_session, sessionmaker
 
 import datetime
 
-from tornado.options import options
 
-engine = create_engine( options.db_engine, echo=options.db_echo)
 Base = declarative_base()
 
 
@@ -23,7 +18,8 @@ class ForwardingAddress(Base):
   payee_addresses           = Column(Text)
   confirmations             = Column(Integer,nullable=False, default=0)
   value                     = Column(Integer)
-  miners_fee                = Column(Integer)
+  fwd_miners_fee            = Column(Integer)
+  input_miners_fee          = Column(Integer)
   status                    = Column(Integer,nullable=False, default=0, index=True)
   signed_fwd_transaction    = Column(Text)
   created                   = Column(DateTime, default=datetime.datetime.now, nullable=False, index=True)
@@ -34,10 +30,10 @@ class ForwardingAddress(Base):
 
   def __repr__(self):
     return "<ForwardingAddress(id=%r, callback=%r, destination_address=%r, input_address=%r,input_transaction_hash=%r,"\
-           "transaction_hash=%r, confirmations=%r, value=%r,miners_fee=%r, status=%r, " \
+           "transaction_hash=%r, confirmations=%r, value=%r,fwd_miners_fee=%r, input_miners_fee=%r, status=%r, " \
            "is_confirmed_by_client=%r, signed_fwd_transaction=%r, payee_addresses=%r)>"\
     % (self.id, self.callback, self.destination_address, self.input_address, self.input_transaction_hash,
-       self.transaction_hash, self.confirmations, self.value, self.miners_fee, self.status,
+       self.transaction_hash, self.confirmations, self.value, self.fwd_miners_fee, self.input_miners_fee, self.status,
        self.is_confirmed_by_client, self.signed_fwd_transaction, self.payee_addresses)
 
 
@@ -67,7 +63,8 @@ class ForwardingAddress(Base):
 
     callback_url_parse = urlparse(self.callback)
     query_args = {
-      'fwd_fee'               : self.miners_fee,
+      'fwd_fee'               : self.fwd_miners_fee or 0,
+      'input_fee'             : self.input_miners_fee or 0,
       'value'                 : self.value,
       'input_address'         : self.input_address,
       'confirmations'         : self.confirmations,
@@ -91,11 +88,12 @@ class ForwardingAddress(Base):
 
     return callback_url
 
-  def set_as_completed(self, input_transaction_hash,transaction_hash,value,miners_fee,signed_fwd_transaction, payee_addresses = None):
+  def set_as_completed(self, input_transaction_hash,transaction_hash,value,fwd_miners_fee,input_miners_fee,signed_fwd_transaction, payee_addresses = None):
     self.input_transaction_hash = input_transaction_hash
     self.transaction_hash       = transaction_hash
     self.value                  = value
-    self.miners_fee             = miners_fee
+    self.fwd_miners_fee         = fwd_miners_fee
+    self.input_miners_fee       = input_miners_fee
     self.signed_fwd_transaction = signed_fwd_transaction
     self.payee_addresses        = payee_addresses
     self.status                 = 1
@@ -114,7 +112,6 @@ class ForwardingAddress(Base):
   def is_transmitted(self):
     return self.status >= 2
 
-Base.metadata.create_all(engine)
 
 def db_bootstrap(session):
   pass

@@ -22,17 +22,20 @@ class WalletNotifyHandler(tornado.web.RequestHandler):
         input_address = transaction_detail['address']
 
     if input_address is None:
+      self.application.log('ERROR', 'Input address not found' )
       self.send_error(404)
       return
 
     fwd_transaction_record = ForwardingAddress.get_by_input_address(self.application.db_session, input_address)
     if fwd_transaction_record is None:
+      self.application.log('ERROR', 'Did not a forwarded transaction for ' + input_address )
       self.send_error(404)
       return
 
     if fwd_transaction_record.is_transmitted() and fwd_transaction_record.input_transaction_hash == txid:
       self.write('*ok*')
       return
+
     elif fwd_transaction_record.is_transmitted() and fwd_transaction_record.input_transaction_hash != txid:
       self.application.log('DEBUG', 'User is sending a second transaction to the same address' )
       fwd_transaction_record = ForwardingAddress.create( self.application.db_session,
@@ -50,17 +53,21 @@ class WalletNotifyHandler(tornado.web.RequestHandler):
 
       # get the the payee addresses
       payee_addresses = []
+      total_input_value = decimal.Decimal(0)
       try:
         for input in decoded_raw_transaction['vin']:
           input_raw_tx = self.application.bitcoind.getrawtransaction(input['txid'])
           decoded_input_raw_tx = self.application.bitcoind.decoderawtransaction(input_raw_tx)
+          total_input_value += decoded_input_raw_tx['vout'][ input['vout'] ]['value']
           for payee_address in decoded_input_raw_tx['vout'][ input['vout'] ]['scriptPubKey']['addresses']:
             if payee_address not in payee_addresses:
               payee_addresses.append(payee_address)
       except Exception, e :
         pass
 
-      self.application.log('PAYEE ADDRESSES ', str (payee_addresses) )
+      total_output_value = decimal.Decimal(0)
+      for vout in decoded_raw_transaction['vout']:
+        total_output_value += vout['value']
 
       vout_index = 0
       found_address = False
@@ -81,6 +88,11 @@ class WalletNotifyHandler(tornado.web.RequestHandler):
       vout = decoded_raw_transaction['vout'][vout_index]
       input_value = vout['value']
       fwd_value = vout['value'] - miners_fee
+      input_miners_fee =  total_input_value - total_output_value
+
+      self.application.log('DEBUG', 'destination_address='+destination_address +
+                                    ', input_miners_fee='+str(input_miners_fee)  +
+                                    ', payee_addresses='+ str(payee_addresses))
 
       try:
         fwd_raw_transaction = self.application.bitcoind.createrawtransaction(
@@ -100,10 +112,13 @@ class WalletNotifyHandler(tornado.web.RequestHandler):
       decoded_signed_fwd_raw_transaction = self.application.bitcoind.decoderawtransaction(signed_fwd_raw_transaction['hex'])
       transaction_hash = decoded_signed_fwd_raw_transaction['txid']
 
+      self.application.log('DEBUG', 'transaction_hash='+ transaction_hash + ', fwd_miners_fee='+str(miners_fee))
+
       fwd_transaction_record.set_as_completed(txid,
                                               transaction_hash,
                                               int(float(input_value) * 1e8),
                                               int(float(miners_fee) * 1e8),
+                                              int(float(input_miners_fee) * 1e8),
                                               signed_fwd_raw_transaction['hex'],
                                               json.dumps(payee_addresses) )
       self.application.db_session.add(fwd_transaction_record)
