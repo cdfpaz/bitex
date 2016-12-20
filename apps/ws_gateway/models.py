@@ -4,22 +4,20 @@
 from datetime import datetime, timedelta
 
 from sqlalchemy import create_engine, func
-from sqlalchemy.sql.expression import or_
+from sqlalchemy.sql.expression import or_, and_
 from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import scoped_session, sessionmaker
 
-from tornado.options import options
+Base = declarative_base()
 
-ENGINE = create_engine(options.db_engine, echo=options.db_echo)
-BASE = declarative_base()
-
-
-class Trade(BASE):
+class Trade(Base):
     __tablename__ = 'trade'
     id = Column(Integer, primary_key=True)
     order_id = Column(Integer, nullable=False)
     counter_order_id = Column(Integer, nullable=False)
+    buyer_id = Column(Integer, nullable=False)
+    seller_id = Column(Integer, nullable=False)
     buyer_username = Column(String(15), nullable=False)
     seller_username = Column(String(15), nullable=False)
     side = Column(String(1), nullable=False)
@@ -30,9 +28,9 @@ class Trade(BASE):
     trade_type = Column(Integer, nullable=False, default=0)  # regular trade
 
     def __repr__(self):
-        return "<Trade(id=%r, order_id=%r, counter_order_id=%r, buyer_username=%r,seller_username=%r,  " \
+        return "<Trade(id=%r, order_id=%r, counter_order_id=%r,buyer_id=%r,seller_id=%r, buyer_username=%r,seller_username=%r,  " \
                "side=%r, symbol=%r, size=%r, price=%r, created=%r, trade_type=%r )>"\
-            % (self.id, self.order_id, self.counter_order_id, self.buyer_username, self.seller_username,
+            % (self.id, self.order_id, self.counter_order_id, self.buyer_id, self.seller_id, self.buyer_username, self.seller_username,
                self.side, self.symbol, self.size, self.price, self.created, self.trade_type)
 
     @staticmethod
@@ -52,30 +50,35 @@ class Trade(BASE):
 
     @staticmethod
     def get_trades(session, symbol, since):
-
-        trades = session.query(Trade).filter(
-            Trade.id > since).filter(Trade.symbol == symbol).order_by(Trade.created.desc())
+        if since > 1000000000:
+          since_timestamp = datetime.utcfromtimestamp(since)
+          trades = session.query(Trade).filter(
+            Trade.created >= since_timestamp).filter(Trade.symbol == symbol).order_by(Trade.id.desc())
+        else:
+          trades = session.query(Trade).filter(
+              Trade.id > int(since)).filter(Trade.symbol == symbol).order_by(Trade.id.desc())
 
         return trades
 
     @staticmethod
-    def get_last_trade_id():
-
-        session = scoped_session(sessionmaker(bind=ENGINE))
+    def get_last_trade_id(session):
         res = session.query(func.max(Trade.id)).one()
-
         return res[0]
 
     @staticmethod
-    def get_last_trades(page_size = None, offset = None, sort_column = None, sort_order='ASC'):
-        session = scoped_session(sessionmaker(bind=ENGINE))
+    def get_last_trades(session, since = None, page_size = None, offset = None, sort_column = None, sort_order='ASC'):
+        if since is not None:
+          if since > 1000000000:
+            since = datetime.utcfromtimestamp(since)
+            filter_obj  = and_(Trade.created >= since)
+          else:
+            filter_obj  = and_(Trade.id > int(since))
+        else:
+          today = datetime.now()
+          since = today - timedelta(days=1)
+          filter_obj  = and_(Trade.created >= since)
 
-        today = datetime.now()
-        timestamp = today - timedelta(days=1)
-
-        trades = session.query(Trade).filter(
-            Trade.created >= timestamp).order_by(
-            Trade.created.desc())
+        trades = session.query(Trade).filter(filter_obj).order_by( Trade.id.desc())
 
         if page_size:
             trades = trades.limit(page_size)
@@ -96,6 +99,8 @@ class Trade(BASE):
             trade = Trade(id=msg['id'],
                           order_id=msg['order_id'],
                           counter_order_id=msg['counter_order_id'],
+                          buyer_id=msg['buyer_id'],
+                          seller_id=msg['seller_id'],
                           buyer_username=msg['buyer_username'],
                           seller_username=msg['seller_username'],
                           side=msg['side'],
@@ -109,7 +114,7 @@ class Trade(BASE):
 
         return trade
 
-BASE.metadata.create_all(ENGINE)
+
 
 
 def db_bootstrap(session):

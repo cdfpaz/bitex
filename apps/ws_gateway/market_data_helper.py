@@ -4,18 +4,18 @@ import json
 import time
 
 from instrument_helper import InstrumentStatusHelper, signal_publish_security_status
-from bitex.signals import Signal
+from pyblinktrade.signals import Signal
 
 import zmq
 from zmq.eventloop.zmqstream import ZMQStream
 
-from bitex.message import JsonMessage
+from pyblinktrade.message import JsonMessage
 
 from models import Trade
 
 from sqlalchemy.orm import scoped_session, sessionmaker
 
-from datetime import datetime
+import datetime
 
 MDSUBSCRIBEDICT = {}
 
@@ -51,10 +51,10 @@ class MarketDataSubscriber(object):
         """" subscribe. """
         self.md_pub_socket = zmq_context.socket(zmq.SUB)
         self.md_pub_socket.connect(trade_pub_connection_string)
-        self.md_pub_socket.setsockopt(zmq.SUBSCRIBE,"MD_FULL_REFRESH_" +self.symbol)
-        self.md_pub_socket.setsockopt(zmq.SUBSCRIBE, "MD_TRADE_" + self.symbol)
-        self.md_pub_socket.setsockopt(zmq.SUBSCRIBE,"MD_INCREMENTAL_" +self.symbol +".0")
-        self.md_pub_socket.setsockopt(zmq.SUBSCRIBE,"MD_INCREMENTAL_" +self.symbol +".1")
+        self.md_pub_socket.setsockopt(zmq.SUBSCRIBE,"^MD_FULL_REFRESH_" +self.symbol + '$')
+        self.md_pub_socket.setsockopt(zmq.SUBSCRIBE,"^MD_TRADE_" + self.symbol + '$')
+        self.md_pub_socket.setsockopt(zmq.SUBSCRIBE,"^MD_INCREMENTAL_" +self.symbol +".0$")
+        self.md_pub_socket.setsockopt(zmq.SUBSCRIBE,"^MD_INCREMENTAL_" +self.symbol +".1$")
 
         self.md_pub_socket_stream = ZMQStream(self.md_pub_socket)
         self.md_pub_socket_stream.on_recv(self.on_md_publish)
@@ -69,6 +69,8 @@ class MarketDataSubscriber(object):
             'MDEntryTypes': ['0', '1', '2'],
             'Instruments': [self.symbol]
         }
+
+        self.application.log('DEBUG', 'MARKET_DATA_SUBSCRIBER', 'SUBSCRIBE' )
 
         return trade_client.sendJSON(md_subscription_msg)
 
@@ -90,7 +92,7 @@ class MarketDataSubscriber(object):
 
     def get_last_trades(self):
         """" get_last_trades. """
-        return Trade.get_last_trades()
+        return Trade.get_last_trades(self.db_session)
 
     def get_trades(self, symbol, since):
         """" get_trades. """
@@ -98,9 +100,10 @@ class MarketDataSubscriber(object):
 
     def on_md_publish(self, publish_msg):
         """" on_md_publish. """
+        start = datetime.datetime.now()
+
         topic = publish_msg[0]
         raw_message = publish_msg[1]
-        self.application.log('IN', 'TRADE_PUB', raw_message )
 
         msg = JsonMessage(raw_message)
 
@@ -109,6 +112,12 @@ class MarketDataSubscriber(object):
 
         elif msg.type == 'X':  # Incremental
             self.on_md_incremental(msg)
+
+        finish = datetime.datetime.now()
+        self.application.log("DEBUG", "PERF", str([ (finish-start).total_seconds(),
+                                                    "MarketDataSubscriber.on_md_publish",
+                                                    "1",
+                                                    [topic, raw_message] ] ) )
 
     def on_md_full_refresh(self, msg):
         """" on_md_full_refresh. """
@@ -215,6 +224,7 @@ class MarketDataSubscriber(object):
             'price': msg.get('MDEntryPx'),
             'qty': msg.get('MDEntrySize'),
             'username': msg.get('Username'),
+            'user_id': msg.get('UserID'),
             'broker': msg.get('Broker'),
             'order_id': msg.get('OrderID'),
             'side': msg.get('MDEntryType'),
@@ -240,6 +250,7 @@ class MarketDataSubscriber(object):
             'price': msg.get('MDEntryPx'),
             'qty': msg.get('MDEntrySize'),
             'username': msg.get('Username'),
+            'user_id': msg.get('UserID'),
             'broker': msg.get('Broker'),
             'order_id': msg.get('OrderID'),
             'side': msg.get('MDEntryType'),
@@ -272,6 +283,8 @@ class MarketDataSubscriber(object):
             "side": msg.get('Side'),
             "counter_order_id": msg.get('SecondaryOrderID'),
             "id": msg.get('TradeID'),
+            "buyer_id": msg.get('MDEntryBuyerID'),
+            "seller_id": msg.get('MDEntrySellerID'),
             "buyer_username": msg.get('MDEntryBuyer'),
             "seller_username": msg.get('MDEntrySeller'),
         }
@@ -286,10 +299,7 @@ class MarketDataSubscriber(object):
         if size_currency not in self.volume_dict:
             self.volume_dict[size_currency] = 0
 
-        volume_price = int(
-            msg.get('MDEntryPx') *
-            msg.get('MDEntrySize') /
-            1.e8)
+        volume_price = int( msg.get('MDEntryPx') * msg.get('MDEntrySize') / 1.e8)
 
         volume_size = msg.get('MDEntrySize')
         self.volume_dict[price_currency] += volume_price
@@ -307,6 +317,10 @@ class SecurityStatusPublisher(object):
         self.symbol = instrument
 
         signal_publish_security_status.connect(self.signal_security_status, 'SECURITY_STATUS')
+
+    def cleanup(self):
+        self.handler = None
+        signal_publish_security_status.disconnect(self.signal_security_status, 'SECURITY_STATUS')
 
     def signal_security_status(self, sender, helper):
         if helper.symbol == self.symbol:
@@ -328,9 +342,12 @@ class SecurityStatusPublisher(object):
 
 class MarketDataPublisher(object):
 
-    def __init__(self, req_id, market_depth, entries, instrument, handler):
+    def __init__(self, req_id, market_depth, entries, instrument, handler, show_username=False):
         self.handler = handler
         self.req_id = req_id
+        self.instrument = instrument
+        self.show_username = show_username
+        self.entries = entries
 
         self.entry_list_order_depth = []
         for entry in entries:
@@ -346,6 +363,14 @@ class MarketDataPublisher(object):
 
         signal_publish_md_status.connect(self.signal_md_status, 'MD_STATUS')
 
+    def cleanup(self):
+        for entry in self.entries:
+            signal_order_depth_entry.disconnect(self.signal_order_depth_added_entry,self.instrument +'.3.' +entry)
+        signal_publish_md_order_depth_incremental.disconnect(self.signal_publish_md_order_depth,self.instrument + '.3')
+        signal_publish_md_status.disconnect(self.signal_md_status, 'MD_STATUS')
+        self.entry_list_order_depth = []
+        self.handler = None
+
     def signal_md_status(self, sender, entry):
         self.entry_list_order_depth.append(entry)
 
@@ -357,28 +382,45 @@ class MarketDataPublisher(object):
             md["MDReqID"] = self.req_id
             md["MDBkTyp"] = '3'
             md["MDIncGrp"] = self.entry_list_order_depth
-            self.handler(sender, md)
+
+            if not self.show_username:
+              for entry in self.entry_list_order_depth:
+                if 'Username' in entry:
+                  del entry['Username']
+
+                if 'MDEntryBuyer' in entry:
+                  del entry['MDEntryBuyer']
+
+                if 'MDEntrySeller' in entry:
+                  del entry['MDEntrySeller']
+
+            if self.handler:
+                self.handler(sender, md)
             self.entry_list_order_depth = []
 
-def generate_trade_history(page_size = None, offset = None, sort_column = None, sort_order='ASC'):
-    trades = Trade.get_last_trades(page_size, offset, sort_column, sort_order)
+def generate_trade_history(session, page_size = None, offset = None, sort_column = None, sort_order='ASC', show_username=False, since=None):
+    trades = Trade.get_last_trades(session, since, page_size, offset, sort_column, sort_order)
     trade_list = []
     for trade in  trades:
-        trade_list.append([ 
+        rec = [
           trade.id,
           trade.symbol,
           trade.side,
           trade.price,
           trade.size,
-          trade.buyer_username,
-          trade.seller_username,
+          trade.buyer_id,
+          trade.seller_id,
           trade.created
-        ])
+        ]
+        if show_username:
+          rec.append(trade.buyer_username)
+          rec.append(trade.seller_username)
+        trade_list.append(rec)
     return trade_list
 
 
-def generate_security_status(symbol, req_id):
-    md_subscriber = MarketDataSubscriber.get(symbol)
+def generate_security_status(symbol, req_id, application):
+    md_subscriber = MarketDataSubscriber.get(symbol, application)
 
     ss = {
         "MsgType": "f",
@@ -395,9 +437,9 @@ def generate_security_status(symbol, req_id):
 
     return ss
 
-def generate_md_full_refresh(symbol, market_depth, entries, req_id):
+def generate_md_full_refresh(symbol, market_depth, entries, req_id, show_username=False, application=None):
     entry_list = []
-    md_subscriber = MarketDataSubscriber.get(symbol)
+    md_subscriber = MarketDataSubscriber.get(symbol, application)
 
     for entry_type in entries:
         if entry_type == '0' or entry_type == '1':
@@ -410,38 +452,45 @@ def generate_md_full_refresh(symbol, market_depth, entries, req_id):
             for order in orders:
                 entry_position += 1
 
-                entry_list.append({
-                    "MDEntryType": entry_type,
-                    "MDEntryPositionNo": entry_position,
-                    "MDEntryID": order['order_id'],
-                    "MDEntryPx": order['price'],
-                    "MDEntrySize": order['qty'],
-                    "MDEntryDate": order['order_date'],
-                    "MDEntryTime": order['order_time'],
-                    "OrderID": order['order_id'],
-                    "Username": order['username'],
-                    'Broker': order['broker']
-                })
+                md_record = {
+                  "MDEntryType": entry_type,
+                  "MDEntryPositionNo": entry_position,
+                  "MDEntryID": order['order_id'],
+                  "MDEntryPx": order['price'],
+                  "MDEntrySize": order['qty'],
+                  "MDEntryDate": order['order_date'],
+                  "MDEntryTime": order['order_time'],
+                  "OrderID": order['order_id'],
+                  "UserID": order['user_id'],
+                  'Broker': order['broker']
+                }
+                if show_username:
+                    md_record['Username'] = order['username']
+                entry_list.append(md_record)
 
                 if entry_position >= market_depth > 0:
                     break
         elif entry_type == '2':
             trade_list = []
             for trade in md_subscriber.get_last_trades():
-                trade_list.append({
-                    "MDEntryType": "2",  # Trade
-                    "Symbol": symbol,
-                    "MDEntryPx": trade.price,
-                    "MDEntrySize": trade.size,
-                    "MDEntryDate": trade.created.date(),
-                    "MDEntryTime": trade.created.time(),
-                    "OrderID": trade.order_id,
-                    "Side": trade.side,
-                    "SecondaryOrderID": trade.counter_order_id,
-                    "TradeID": trade.id,
-                    "MDEntryBuyer": trade.buyer_username,
-                    "MDEntrySeller": trade.seller_username,
-                })
+                md_record = {
+                  "MDEntryType": "2",  # Trade
+                  "Symbol": symbol,
+                  "MDEntryPx": trade.price,
+                  "MDEntrySize": trade.size,
+                  "MDEntryDate": trade.created.date(),
+                  "MDEntryTime": trade.created.time(),
+                  "OrderID": trade.order_id,
+                  "Side": trade.side,
+                  "SecondaryOrderID": trade.counter_order_id,
+                  "TradeID": trade.id,
+                  "MDEntryBuyerID": trade.buyer_id,
+                  "MDEntrySellerID": trade.seller_id
+                }
+                if show_username:
+                  md_record["MDEntryBuyer"] = trade.buyer_username
+                  md_record["MDEntrySeller"] = trade.seller_username
+                trade_list.append(md_record)
 
             volume_dict = {}
 

@@ -20,80 +20,52 @@
 
 import os
 import sys
+import logging
 
 ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-sys.path.insert(0, os.path.join(ROOT_PATH, 'libs'))
-sys.path.insert(0, os.path.join(ROOT_PATH, 'apps'))
+sys.path.insert(0, os.path.join( os.path.dirname(__file__), '../' ) )
 
-import base64
+import ConfigParser
+import argparse
+from appdirs import site_config_dir
 
 import tornado.ioloop
 import tornado.web
 import tornado.httpserver
 import tornado.template
-from tornado.options import define, options
-
 from tornado import websocket
 
-import logging
 import urllib
 import urllib2
 import json
 import uuid
-from json import loads
-from bitex.json_encoder import JsonEncoder
+from pyblinktrade.json_encoder import JsonEncoder
 
 import zmq
-from bitex.message import JsonMessage, InvalidMessageException
-from bitex.zmq_client import TradeClient, TradeClientException
+from pyblinktrade.message import JsonMessage, InvalidMessageException
+from trade.zmq_client  import TradeClient, TradeClientException
 
-import calendar, time
+from pyblinktrade.project_options import ProjectOptions
+
 from time import mktime
-import datetime
-
 
 from zmq.eventloop.zmqstream import ZMQStream
 
-define("callback_url")
-define("port", type=int  ,help="port")
-define("gateway_log", help="logging" )
-define("trade_in", help="trade zmq queue")
-define("trade_pub",help="trade zmq publish queue")
-define("url_payment_processor",help="blockchain api_receive url", default='https://blockchain.info/api/receive')
-define("session_timeout_limit", default=0, help="Session timeout")
-define("db_echo",default=False, help="Prints every database command on the stdout")
 
-define("db_engine",help="SQLAlchemy database engine string")
-define("config", help="config file", callback=lambda path: tornado.options.parse_config_file(path, final=False))
+from market_data_helper import MarketDataPublisher, MarketDataSubscriber, generate_md_full_refresh, generate_trade_history, SecurityStatusPublisher, generate_security_status, signal_publish_md_status, signal_publish_md_order_depth_incremental
 
-tornado.options.parse_command_line()
-if not options.trade_in or \
-   not options.trade_pub or \
-   not options.gateway_log or \
-   not options.callback_url or \
-   not options.port or \
-   not options.db_engine:
-  tornado.options.print_help()
-  exit(0)
-
-input_log_file_handler = logging.handlers.TimedRotatingFileHandler( options.gateway_log, when='MIDNIGHT')
-formatter = logging.Formatter('%(asctime)s - %(message)s')
-input_log_file_handler.setFormatter(formatter)
-
-
-from market_data_helper import MarketDataPublisher, MarketDataSubscriber, generate_md_full_refresh, generate_trade_history, SecurityStatusPublisher, generate_security_status
-
-#from withdraw_confirmation import WithdrawConfirmationHandler, WithdrawConfirmedHandler
 from deposit_hander import DepositHandler
 from process_deposit_handler import ProcessDepositHandler
 from verification_webhook_handler import VerificationWebHookHandler
 from deposit_receipt_webhook_handler import  DepositReceiptWebHookHandler
 from rest_api_handler import RestApiHandler
-import datetime
+from datetime import datetime, timedelta
 
+from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 
 from models import Trade
+import urllib
 
 class WebSocketHandler(websocket.WebSocketHandler):
 
@@ -106,42 +78,100 @@ class WebSocketHandler(websocket.WebSocketHandler):
                 request.remote_ip))
         application.log('INFO', 'CONNECTION_OPEN', self.remote_ip )
 
+        self.trade_client = None
+        self.user_response = None
+        self.last_message_datetime = [datetime.now()]
+        self.open_orders = {}
+        self.md_subscriptions = {}
+        self.sec_status_subscriptions = {}
+        self.honey_pot_connection = False
+
+        if self.application.is_tor_node( self.remote_ip ):
+            self.honey_pot_connection = True
+            application.log('INFO', 'BLOCKED_TOR_NODE', self.remote_ip )
+            return
+
         self.trade_client = TradeClient(
             self.application.zmq_context,
             self.application.trade_in_socket,
-            options.trade_pub)
+            self.application.options.trade_pub)
+
+    def process_execution_report(self):
+        pass
+
+    def on_close(self):
+        self.application.log('INFO', 'CONNECTION_CLOSE', self.remote_ip )
+
+        for req_id, md_publisher_list in self.md_subscriptions.items():
+            for md_publisher in md_publisher_list:
+                md_publisher.cleanup()
+            self.md_subscriptions[req_id] = []
         self.md_subscriptions = {}
+
+        for req_id, sec_status_publisher_list in self.sec_status_subscriptions.items():
+            for sec_status_publisher in sec_status_publisher_list:
+                sec_status_publisher.cleanup()
+            self.sec_status_subscriptions[req_id] = []
         self.sec_status_subscriptions = {}
 
-        self.user_response = None
+        self.application.unregister_connection(self)
+        if self.trade_client:
+            self.trade_client.close()
+        self.trade_client = None
 
     def on_trade_publish(self, message):
         self.write_message(str(message[1]))
 
+    def check_origin(self, origin):
+      self.application.log('INFO', 'ORIGIN', origin)
+      return self.application.is_origin_allowed(origin)
+
     def open(self):
+        self.set_nodelay(True)
         try:
-            self.trade_client.connect()
-            self.trade_client.on_trade_publish = self.on_trade_publish
-            self.application.register_connection(self)
+            if self.trade_client:
+                self.trade_client.connect()
+                self.trade_client.on_trade_publish = self.on_trade_publish
+                self.application.register_connection(self)
 
         except TradeClientException as e:
             self.write_message(
                 '{"MsgType":"ERROR", "Description":"Error establishing connection with trade", "Detail": "' +
                 str(e) +
                 '"}')
-            self.trade_client.close()
+            if self.trade_client:
+                self.trade_client.close()
             self.close()
 
     def write_message(self, message, binary=False):
-        self.application.log('OUT', self.trade_client.connection_id, message )
         super(WebSocketHandler, self).write_message(message, binary)
 
-    def close(self):
+    def close(self, code=None, reason=None):
       self.application.log('DEBUG', self.remote_ip, 'WebSocketHandler.close() invoked' )
       super(WebSocketHandler, self).close()
 
     def on_message(self, raw_message):
-        if not self.trade_client.isConnected():
+        if self.honey_pot_connection:
+            self.application.log('INFO', "HONEY_POT", raw_message )
+
+        if self.trade_client is None or not self.trade_client.isConnected():
+            return
+
+        self.last_message_datetime.append(datetime.now())
+        message_time_last_second = self.last_message_datetime[-1] - timedelta(seconds=1)
+        for x in xrange(0, len(self.last_message_datetime)):
+            if self.last_message_datetime[x] > message_time_last_second:
+                self.last_message_datetime = self.last_message_datetime[x:]
+                break
+        if len(self.last_message_datetime) > 15:  # higher than 15 messages per second
+            self.application.log("ERROR",
+                                 "TOO_MANY_MESSAGES",
+                                 "Exceed 15 messages per second. [ip=" + self.remote_ip + ",'" + raw_message + "']")
+            self.write_message(
+                '{"MsgType":"ERROR", "Description":"Too many messages per second", "Detail": "16 messages in the last second"}')
+            self.application.unregister_connection(self)
+            self.trade_client.close()
+            self.close()
             return
 
         try:
@@ -156,20 +186,19 @@ class WebSocketHandler(websocket.WebSocketHandler):
             self.close()
             return
 
+        req_msg.set('RemoteIP' ,self.remote_ip)
 
         if req_msg.isUserRequest():
             if req_msg.has('Password'):
                 raw_message = raw_message.replace(req_msg.get('Password'), '*')
             if req_msg.has('NewPassword'):
                 raw_message = raw_message.replace(req_msg.get('NewPassword'), '*')
-
             self.application.log('IN', self.trade_client.connection_id ,raw_message )
-        else:
-            self.application.log('IN', self.trade_client.connection_id, raw_message )
+
 
 
         if req_msg.isTestRequest() or req_msg.isHeartbeat():
-            dt = datetime.datetime.now()
+            dt = datetime.now()
             response_msg = {
                 'MsgType'           : '0',
                 'TestReqID'         : req_msg.get('TestReqID'),
@@ -209,42 +238,60 @@ class WebSocketHandler(websocket.WebSocketHandler):
                 currency = req_msg.get('Currency')
 
                 secret = uuid.uuid4().hex
+                callback_url = self.application.options.callback_url + secret
+
+                hot_wallet  = self.get_broker_wallet('hot', currency)
                 cold_wallet = self.get_broker_wallet('cold', currency)
-                callback_url = options.callback_url + secret
-                if not cold_wallet:
+                if not hot_wallet and not cold_wallet:
+                    return
+
+                if not hot_wallet and cold_wallet:
+                    dest_wallet = cold_wallet
+                elif hot_wallet and not cold_wallet:
+                    dest_wallet = hot_wallet
+                else:
+                    # 62.5% of all deposits go to the cold wallet, and 37.5% go to the hot wallet
+                    dest_wallet = hot_wallet
+                    if secret[0] in ('0','1','2','3','4','5','6','7','8','9'):
+                        dest_wallet = cold_wallet
+
+                if not dest_wallet:
                     return
 
                 parameters = urllib.urlencode({
                     'method': 'create',
-                    'address': cold_wallet,
+                    'address': dest_wallet,
                     'callback': callback_url,
                     'currency': currency
                 })
 
-
                 try:
-                    url_payment_processor = options.url_payment_processor + '?' + parameters
-                    print "invoking .. ", url_payment_processor
+                    url_payment_processor = self.application.options.url_payment_processor + '?' + parameters
+                    self.application.log('DEBUG', self.trade_client.connection_id, "invoking..."  + url_payment_processor )
                     response = urllib2.urlopen(url_payment_processor)
                     data = json.load(response)
+                    self.application.log('DEBUG', self.trade_client.connection_id, str(data) )
+
                     req_msg.set('InputAddress', data['input_address'])
                     req_msg.set('Destination', data['destination'])
                     req_msg.set('Secret', secret)
                 except urllib2.HTTPError as e:
-                    self.write_message(json.dumps({
-                        'MsgType': 'ERROR',
-                        'ReqID': req_msg.get('DepositReqID'),
-                        'Description': 'Blockchain.info is not available at this moment, please try again within few minutes',
-                        'Detail': str(e)
-                    }))
+                    out_message = json.dumps({
+                      'MsgType': 'ERROR',
+                      'ReqID': req_msg.get('DepositReqID'),
+                      'Description': 'Blockchain.info is not available at this moment, please try again within few minutes',
+                      'Detail': str(e)
+                    })
+                    self.write_message(out_message)
                     return
                 except Exception as e:
-                    self.write_message(json.dumps({
-                        'MsgType': 'ERROR',
-                        'ReqID': req_msg.get('DepositReqID'),
-                        'Description': 'Error retrieving a new deposit address from Blockchain.info. Please, try again',
-                        'Detail': str(e)
-                    }))
+                    out_message = json.dumps({
+                      'MsgType': 'ERROR',
+                      'ReqID': req_msg.get('DepositReqID'),
+                      'Description': 'Error retrieving a new deposit address from Blockchain.info. Please, try again',
+                      'Detail': str(e)
+                    })
+                    self.write_message(out_message)
                     return
 
         try:
@@ -254,6 +301,15 @@ class WebSocketHandler(websocket.WebSocketHandler):
 
             if resp_message and resp_message.isUserResponse():
                 self.user_response = resp_message
+                if self.is_user_logged():
+                    self.application.log('LOGIN_OK', self.trade_client.connection_id, raw_message )
+                    #TODO: Request open order list 
+                    #self.trade_client.
+
+ 
+                else:
+                    self.application.log('LOGIN_FAILED', self.trade_client.connection_id, raw_message )
+
 
             if not self.trade_client.isConnected():
                 self.application.log('DEBUG', self.trade_client.connection_id, 'not self.trade_client.isConnected()' )
@@ -276,6 +332,12 @@ class WebSocketHandler(websocket.WebSocketHandler):
             return False
         return self.user_response.get('UserStatus') == 1
 
+    def is_broker(self):
+      if not self.is_user_logged():
+        return False
+      return self.user_response.get('IsBroker') == 1
+
+
     def get_broker_wallet(self, type, currency):
         if not self.user_response:
             return
@@ -294,22 +356,23 @@ class WebSocketHandler(websocket.WebSocketHandler):
                     if wallet['type'] == type:
                         return wallet['address']
 
-    def on_close(self):
-        self.application.log('DEBUG', self.trade_client.connection_id, 'WebSocketHandler.on_close' )
-        self.application.unregister_connection(self)
-        self.trade_client.close()
-
     def on_trade_history_request(self, msg):
+        since       = msg.get('Since') 
         page        = msg.get('Page', 0)
         page_size   = msg.get('PageSize', 100)
         filter      = msg.get('Filter')
 
         offset      = page * page_size
 
-        columns = [ 'TradeID'           , 'Market',  'Side', 'Price', 'Size', 
-                    'Buyer'             , 'Seller', 'Created' ]
+        if self.is_broker():
+          columns = [ 'TradeID' , 'Market',  'Side', 'Price', 'Size',
+                      'Buyer'   , 'Seller', 'Created', 'BuyerUsername' ,'SellerUsername' ]
+        else:
+          columns = [ 'TradeID' , 'Market',  'Side', 'Price', 'Size',
+                      'Buyer'   , 'Seller', 'Created' ]
 
-        trade_list = generate_trade_history(page_size, offset)
+
+        trade_list = generate_trade_history(self.application.db_session, page_size, offset, show_username=self.is_broker(), since=since)
 
         response_msg = {
             'MsgType'           : 'U33', # TradeHistoryResponse
@@ -319,6 +382,8 @@ class WebSocketHandler(websocket.WebSocketHandler):
             'Columns'           : columns,
             'TradeHistoryGrp'   : trade_list
         }
+        if since:
+          response_msg['Since'] = since
 
         self.write_message(str(json.dumps(response_msg, cls=JsonEncoder)))
 
@@ -329,6 +394,9 @@ class WebSocketHandler(websocket.WebSocketHandler):
         # Disable previous Snapshot + Update Request
         if int(msg.get('SubscriptionRequestType')) == 2:
             if req_id in self.sec_status_subscriptions:
+                for sec_status_publisher in self.sec_status_subscriptions[req_id]:
+                    sec_status_publisher.cleanup()
+                self.sec_status_subscriptions[req_id] = []
                 del self.sec_status_subscriptions[req_id]
             return
 
@@ -341,7 +409,8 @@ class WebSocketHandler(websocket.WebSocketHandler):
         for instrument in instruments:
             ss = generate_security_status(
                 instrument,
-                req_id)
+                req_id,
+                self.application)
             self.write_message(str(json.dumps(ss, cls=JsonEncoder)))
 
             # Snapshot + Updates
@@ -360,6 +429,9 @@ class WebSocketHandler(websocket.WebSocketHandler):
         # Disable previous Snapshot + Update Request
         if int(msg.get('SubscriptionRequestType')) == 2:
             if req_id in self.md_subscriptions:
+                for md_publisher  in self.md_subscriptions[req_id]:
+                    md_publisher.cleanup()
+                self.md_subscriptions[req_id] = []
                 del self.md_subscriptions[req_id]
             return
 
@@ -376,7 +448,9 @@ class WebSocketHandler(websocket.WebSocketHandler):
                 instrument,
                 market_depth,
                 entries,
-                req_id)
+                req_id,
+                self.is_broker(),
+                self.application)
             self.write_message(str(json.dumps(md, cls=JsonEncoder)))
 
             # Snapshot + Updates
@@ -387,7 +461,8 @@ class WebSocketHandler(websocket.WebSocketHandler):
                         market_depth,
                         entries,
                         instrument,
-                        self.on_send_json_msg_to_user))
+                        self.on_send_json_msg_to_user,
+                        self.is_broker()))
 
     def on_send_json_msg_to_user(self, sender, json_msg):
         s = json.dumps(json_msg, cls=JsonEncoder)
@@ -396,7 +471,10 @@ class WebSocketHandler(websocket.WebSocketHandler):
 
 class WebSocketGatewayApplication(tornado.web.Application):
 
-    def __init__(self, opt):
+    def __init__(self, opt, instance_name):
+        self.options = opt
+        self.instance_name = instance_name
+
         handlers = [
             (r'/', WebSocketHandler),
             (r'/get_deposit(.*)', DepositHandler),
@@ -410,40 +488,60 @@ class WebSocketGatewayApplication(tornado.web.Application):
         )
         tornado.web.Application.__init__(self, handlers, **settings)
 
-        self.replay_logger = logging.getLogger("REPLAY")
+
+        self.allowed_origins = json.loads(self.options.allowed_origins)
+        self.allow_all_origins = self.allowed_origins[0] == '*'
+
+        input_log_file_handler = logging.handlers.TimedRotatingFileHandler(
+          os.path.expanduser(self.options.gateway_log), when='MIDNIGHT')
+        formatter = logging.Formatter('%(asctime)s - %(message)s')
+        input_log_file_handler.setFormatter(formatter)
+
+        self.replay_logger = logging.getLogger(self.instance_name)
         self.replay_logger.setLevel(logging.INFO)
         self.replay_logger.addHandler(input_log_file_handler)
+
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setLevel(logging.DEBUG)
+        ch.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        self.replay_logger.addHandler(ch)
+
         self.replay_logger.info('START')
         self.log_start_data()
 
+        self.update_tor_nodes()
 
-        from models import ENGINE, db_bootstrap
-        self.db_session = scoped_session(sessionmaker(bind=ENGINE))
+        from models import Base, db_bootstrap
+        db_engine = self.options.sqlalchemy_engine + ':///' +\
+                    os.path.expanduser(self.options.sqlalchemy_connection_string)
+        engine = create_engine( db_engine, echo=self.options.db_echo)
+        Base.metadata.create_all(engine)
+        self.db_session = scoped_session(sessionmaker(bind=engine))
         db_bootstrap(self.db_session)
 
 
         self.zmq_context = zmq.Context()
 
         self.trade_in_socket = self.zmq_context.socket(zmq.REQ)
-        self.trade_in_socket.connect(opt.trade_in)
+        self.trade_in_socket.connect(self.options.trade_in)
 
         self.application_trade_client = TradeClient(
             self.zmq_context,
             self.trade_in_socket)
         self.application_trade_client.connect()
 
-        instruments = self.application_trade_client.getSecurityList()
+        self.security_list = self.application_trade_client.getSecurityList()
         self.md_subscriber = {}
 
-        for instrument in instruments:
+        for instrument in self.security_list.get('Instruments'):
             symbol = instrument['Symbol']
             self.md_subscriber[symbol] = MarketDataSubscriber.get(symbol, self)
             self.md_subscriber[symbol].subscribe(
                 self.zmq_context,
-                options.trade_pub,
+                self.options.trade_pub,
                 self.application_trade_client)
 
-        last_trade_id = Trade.get_last_trade_id()
+        last_trade_id = Trade.get_last_trade_id(self.db_session)
         trade_list = self.application_trade_client.getLastTrades(last_trade_id)
 
         for trade in trade_list:
@@ -453,13 +551,15 @@ class WebSocketGatewayApplication(tornado.web.Application):
             msg['side']             = trade[2]
             msg['price']            = trade[3]
             msg['size']             = trade[4]
-            msg['buyer_username']   = trade[5]
-            msg['seller_username']  = trade[6]
-            msg['created']          = trade[7]
-            msg['trade_date']       = trade[7][:10]
-            msg['trade_time']       = trade[7][11:]
-            msg['order_id']         = trade[8]
-            msg['counter_order_id'] = trade[9]
+            msg['buyer_id']         = trade[5]
+            msg['seller_id']        = trade[6]
+            msg['buyer_username']   = trade[7]
+            msg['seller_username']  = trade[8]
+            msg['created']          = trade[9]
+            msg['trade_date']       = trade[9][:10]
+            msg['trade_time']       = trade[9][11:]
+            msg['order_id']         = trade[10]
+            msg['counter_order_id'] = trade[11]
             Trade.create( self.db_session, msg)
 
         all_trades = Trade.get_all_trades(self.db_session)
@@ -481,16 +581,46 @@ class WebSocketGatewayApplication(tornado.web.Application):
             30000)
         self.heart_beat_timer.start()
 
+        self.update_tor_nodes_timer = tornado.ioloop.PeriodicCallback(
+            self.update_tor_nodes,
+            3600000)
+        self.update_tor_nodes_timer.start()
+
+
+    def format_currency(self, currency_code, value, is_value_in_satoshis=True):
+      currencies = self.security_list.get('Currencies')
+      for currency_obj in currencies:
+        if currency_obj['Code'] == currency_code:
+          if is_value_in_satoshis:
+            return currency_obj['FormatPython'].format(value/1e8)
+          else:
+            return currency_obj['FormatPython'].format(value)
+      return value
+
+    def is_origin_allowed(self, origin):
+      if self.allow_all_origins:
+        return  True
+
+      if origin in self.allowed_origins:
+        return True
+      return False
+
+    def is_tor_node(self, ip):
+        self.log('DEBUG', 'TOR_CHECK', ip)
+        return ip in self.tor_ip_list_
+
     def log_start_data(self):
         self.log('PARAM','BEGIN')
-        self.log('PARAM','callback_url'         ,options.callback_url)
-        self.log('PARAM','port'                 ,options.port)
-        self.log('PARAM','trade_in'             ,options.trade_in)
-        self.log('PARAM','trade_pub'            ,options.trade_pub)
-        self.log('PARAM','url_payment_processor',options.url_payment_processor)
-        self.log('PARAM','session_timeout_limit',options.session_timeout_limit)
-        self.log('PARAM','db_echo'              ,options.db_echo)
-        self.log('PARAM','db_engine'            ,options.db_engine)
+        self.log('PARAM','callback_url'                 ,self.options.callback_url)
+        self.log('PARAM','port'                         ,self.options.port)
+        self.log('PARAM','trade_in'                     ,self.options.trade_in)
+        self.log('PARAM','trade_pub'                    ,self.options.trade_pub)
+        self.log('PARAM','url_payment_processor'        ,self.options.url_payment_processor)
+        self.log('PARAM','session_timeout_limit'        ,self.options.session_timeout_limit)
+        self.log('PARAM','db_echo'                      ,self.options.db_echo)
+        self.log('PARAM','sqlalchemy_engine'            ,self.options.sqlalchemy_engine)
+        self.log('PARAM','sqlalchemy_connection_string' ,self.options.sqlalchemy_connection_string)
+        self.log('PARAM','allowed_origins'              ,self.options.allowed_origins)
         self.log('PARAM','END')
 
 
@@ -510,9 +640,22 @@ class WebSocketGatewayApplication(tornado.web.Application):
 
         self.replay_logger.info(  log_msg )
 
+    def update_tor_nodes(self):
+        self.log('DEBUG', 'TOR_LIST', 'requesting from https://torstatus.blutmagie.de/ip_list_all.php/Tor_ip_list_ALL.csv')
+        try:
+            from urllib2 import urlopen
+            response = urlopen("https://torstatus.blutmagie.de/ip_list_all.php/Tor_ip_list_ALL.csv")
+            self.tor_ip_list_ = set(response.read().splitlines())
+            #self.tor_ip_list_.add('127.0.0.1')
+            self.log('INFO', 'TOR_LIST', str(self.tor_ip_list_))
+        except:
+            pass
+
     def send_heartbeat_to_trade(self):
         try:
-            self.application_trade_client.sendJSON({'MsgType': '1', 'TestReqID': '0'})
+            self.application_trade_client.sendJSON({'MsgType': '1',
+                                                    'TestReqID': '0',
+                                                    'NumActiveConnections': len(self.connections)})
         except Exception as e:
             pass
 
@@ -524,35 +667,70 @@ class WebSocketGatewayApplication(tornado.web.Application):
         return True
 
     def unregister_connection(self, ws_client):
-        self.log('INFO', 'UNREGISTER_CONNECTION',  {'remote_ip': ws_client.remote_ip, 'trade.connection_id':  ws_client.trade_client.connection_id  }  )
-        if ws_client.trade_client.connection_id in self.connections:
-            del self.connections[ws_client.trade_client.connection_id]
-            return True
-        return False
+        if ws_client.trade_client:
+            self.log('INFO', 'UNREGISTER_CONNECTION',  {'remote_ip': ws_client.remote_ip, 'trade.connection_id':  ws_client.trade_client.connection_id  }  )
+            if ws_client.trade_client.connection_id in self.connections:
+                del self.connections[ws_client.trade_client.connection_id]
+                return True
+            return False
 
     def clean_up(self):
         self.heart_beat_timer.stop()
         self.application_trade_client.close()
 
         for client_connection_id in self.connections:
-            self.connections[client_connection_id].trade_client.close()
+            self.connections[client_connection_id].close()
         self.connections = []
+
+def run_application(options, instance_name):
+  from zmq.eventloop import ioloop
+  ioloop.install()
+
+  application = WebSocketGatewayApplication(options, instance_name)
+
+  server = tornado.httpserver.HTTPServer(application)
+  server.listen(options.port)
+
+  try:
+    tornado.ioloop.IOLoop.instance().start()
+  except KeyboardInterrupt:
+    application.clean_up()
+
 
 
 def main():
-    from zmq.eventloop import ioloop
-    ioloop.install()
+    parser = argparse.ArgumentParser(description="Blinktrade WebSocket Gateway application")
+    parser.add_argument('-i', "--instance", action="store", dest="instance", help='Instance name', type=str)
+    parser.add_argument('-c', "--config",
+                        action="store",
+                        dest="config",
+                        default=os.path.expanduser('~/.blinktrade/bitex.ini'),
+                        help='Configuration file', type=str)
+    arguments = parser.parse_args()
 
-    application = WebSocketGatewayApplication(options)
+    if not arguments.instance:
+      parser.print_help()
+      return
 
-    server = tornado.httpserver.HTTPServer(application)
-    server.listen(options.port)
+    candidates = [ os.path.join(site_config_dir('blinktrade'), 'bitex.ini'),
+                   os.path.expanduser('~/.blinktrade/bitex.ini'),
+                   arguments.config]
+    config = ConfigParser.SafeConfigParser()
+    config.read( candidates )
 
-    try:
-        tornado.ioloop.IOLoop.instance().start()
-    except KeyboardInterrupt:
-        application.clean_up()
-        print 'END'
+    options = ProjectOptions(config, arguments.instance)
 
+    if not options.trade_in or\
+       not options.trade_pub or\
+       not options.gateway_log or\
+       not options.callback_url or\
+       not options.port or\
+       not options.allowed_origins or\
+       not options.sqlalchemy_connection_string or \
+       not options.sqlalchemy_engine:
+      raise RuntimeError("Invalid configuration file")
+
+
+    run_application(options, arguments.instance)
 if __name__ == "__main__":
     main()

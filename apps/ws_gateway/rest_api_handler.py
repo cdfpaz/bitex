@@ -34,10 +34,10 @@ class RestApiHandler(tornado.web.RequestHandler):
        asks = []
 
        for order in md_subscriber.buy_side:
-           bids.append([order['price']/1e8, order['qty']/1e8, order['username']])
+           bids.append([order['price']/1e8, order['qty']/1e8, order['user_id']])
 
        for order in md_subscriber.sell_side:
-           asks.append([order['price']/1e8, order['qty']/1e8, order['username']])
+           asks.append([order['price']/1e8, order['qty']/1e8, order['user_id']])
 
        self.write(
             {
@@ -49,7 +49,6 @@ class RestApiHandler(tornado.web.RequestHandler):
 
     def _send_trades(self, symbol, since):
         md_subscriber = MarketDataSubscriber.get(symbol, self.application)
-
         trades = []
 
         for trade in md_subscriber.get_trades(symbol, since):
@@ -63,15 +62,21 @@ class RestApiHandler(tornado.web.RequestHandler):
         self.write(json.dumps(trades))
 
     def _process_request(self, version, symbol, resource):
-        currency = self.get_argument("crypto_currency", default='BTC', strip=False)
-        since = self.get_argument("since", default=0, strip=False)
+        currency  = self.get_argument("crypto_currency", default='BTC', strip=False)
+        since     = self.get_argument("since", default=0, strip=False)
+        callback  = self.get_argument("callback", default='', strip=False)
+        if not callback:
+          callback  = self.get_argument("jsonp", default='', strip=False)
+
         instrument = '%s%s'%(currency,  symbol)
 
+        if callback:
+          self.write( callback + '(' )
         if version == 'v1':
             if resource == 'orderbook':
                 self._send_order_book(instrument)
             elif resource == 'trades':
-                self._send_trades(instrument, since)
+                self._send_trades(instrument, float(since))
             elif resource == 'ticker':
                 self._send_tiker(instrument)
             else:
@@ -79,3 +84,5 @@ class RestApiHandler(tornado.web.RequestHandler):
         else:
             self.send_error(404)
 
+        if callback:
+          self.write( ');' )
