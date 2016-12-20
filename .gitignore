@@ -1,0 +1,52 @@
+*.py[cod]
+
+# C extensions
+*.so
+
+# Packages
+*.egg
+*.egg-info
+dist
+build
+eggs
+parts
+bin
+var
+sdist
+develop-eggs
+.installed.cfg
+lib
+lib64
+
+# Installer logs
+pip-log.txt
+
+# logs
+*.log
+
+# Unit test / coverage reports
+.coverage
+.tox
+nosetests.xml
+
+# Translations
+*.mo
+
+# Mr Developer
+.mr.developer.cfg
+.project
+.pydevproject
+.idea
+
+# OS files
+.DS_Store
+*.sqlite
+jsdev/bitex/templates/templates.soy.js
+static/satoshi_square.bkp.html
+static/js/bitex_app_satoshi_square.compiled.en_US.js
+static/js/bitex_app_blink_trade.compiled.en_US.js
+static/js/bitex_app_blink_trade.compiled.es.js
+static/js/bitex_app_merchant.compiled.en_US.js
+*.soy.js
+logs/
+*.iml
