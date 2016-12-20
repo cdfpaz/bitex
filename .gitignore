@@ -50,3 +50,4 @@ static/js/bitex_app_merchant.compiled.en_US.js
 *.soy.js
 logs/
 *.iml
+ssl/
