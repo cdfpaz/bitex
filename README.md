@@ -3,6 +3,8 @@ BlinkTrade
 
 BlinkTrade - Open Source Exchange Platform
 
+![Demo](https://s30.postimg.org/b8fx6ou9t/out.gif)
+
 [How to install on Google Compute Engine](https://github.com/blinktrade/bitex/wiki/HOW-TO-DEPLOY-BLINKTRADE-ON-GOOGLE-COMPUTE-ENGINE) 
 
 #Get Started
