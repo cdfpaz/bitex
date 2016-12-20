@@ -1,30 +1,42 @@
+import sys
+import os
 import logging
+import logging.handlers
 import zmq
 import time
 import datetime
 import traceback
 
-from tornado.options import  options
-
+from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 import json
-from bitex.json_encoder import JsonEncoder
+from pyblinktrade.json_encoder import JsonEncoder
 
 from errors import *
 
 class TradeApplication(object):
-
   @classmethod
   def instance(cls):
     if not hasattr(cls, "_instance"):
       cls._instance = cls()
     return cls._instance
 
-  def initialize(self):
+  def initialize(self, options, instance_name):
     self.publish_queue = []
     self.options = options
+    self.instance_name = instance_name
 
-    from models import engine, db_bootstrap
+    self.order_matcher_disabled = False
+    if options.has_option('order_matcher_disabled'):
+      self.order_matcher_disabled = True
+
+    from models import Base, db_bootstrap
+    db_engine = options.sqlalchemy_engine + ':///' + \
+                os.path.expanduser(options.sqlalchemy_connection_string)
+    engine = create_engine( db_engine, echo=options.db_echo)
+    Base.metadata.create_all(engine)
+
+
     self.db_session = scoped_session(sessionmaker(bind=engine))
     db_bootstrap(self.db_session)
 
@@ -38,13 +50,19 @@ class TradeApplication(object):
     self.publisher_socket = self.context.socket(zmq.PUB)
     self.publisher_socket.bind(self.options.trade_pub)
 
-    input_log_file_handler = logging.handlers.TimedRotatingFileHandler( self.options.trade_log, when='MIDNIGHT')
-    formatter = logging.Formatter('%(asctime)s - %(message)s')
-    input_log_file_handler.setFormatter(formatter)
+    input_log_file_handler = logging.handlers.TimedRotatingFileHandler(
+      os.path.expanduser(self.options.trade_log), when='MIDNIGHT')
+    input_log_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 
-    self.replay_logger = logging.getLogger("REPLAY")
+    self.replay_logger = logging.getLogger(self.instance_name)
     self.replay_logger.setLevel(logging.INFO)
     self.replay_logger.addHandler(input_log_file_handler)
+
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(logging.DEBUG)
+    ch.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    self.replay_logger.addHandler(ch)
+
     self.replay_logger.info('START')
 
     self.log_start_data()
@@ -52,6 +70,9 @@ class TradeApplication(object):
 
 
   def log(self, command, key, value=None):
+    if len(logging.getLogger().handlers):
+      logging.getLogger().handlers = []  # workaround to avoid stdout logging from the root logger
+
     log_msg = command + ',' + key
     if value:
       try:
@@ -69,22 +90,27 @@ class TradeApplication(object):
 
   def log_start_data(self):
     self.log('PARAM','BEGIN')
-    self.log('PARAM','trade_in'              ,self.options.trade_in)
-    self.log('PARAM','trade_pub'             ,self.options.trade_pub)
-    self.log('PARAM','trade_log'             ,self.options.trade_log)
-    self.log('PARAM','session_timeout_limit' ,self.options.session_timeout_limit)
-    self.log('PARAM','db_echo'               ,self.options.db_echo)
-    self.log('PARAM','db_engine'             ,self.options.db_engine)
-    self.log('PARAM','test_mode'             ,self.options.test_mode)
-    self.log('PARAM','dev_mode'              ,self.options.dev_mode)
-    self.log('PARAM','satoshi_mode'          ,self.options.satoshi_mode)
-    self.log('PARAM','global_email_language' ,self.options.global_email_language)
-    self.log('PARAM','verification_bonus'    ,self.options.verification_bonus)
+    self.log('PARAM','trade_in'                     ,self.options.trade_in)
+    self.log('PARAM','trade_pub'                    ,self.options.trade_pub)
+    self.log('PARAM','trade_log'                    ,self.options.trade_log)
+    self.log('PARAM','session_timeout_limit'        ,self.options.session_timeout_limit)
+    self.log('PARAM','db_echo'                      ,self.options.db_echo)
+    self.log('PARAM','sqlalchemy_engine'            ,self.options.sqlalchemy_engine)
+    self.log('PARAM','sqlalchemy_connection_string' ,self.options.sqlalchemy_connection_string)
+    self.log('PARAM','test_mode'                    ,self.options.test_mode)
+    self.log('PARAM','dev_mode'                     ,self.options.dev_mode)
+    self.log('PARAM','satoshi_mode'                 ,self.options.satoshi_mode)
+    self.log('PARAM','order_matcher_disabled'       ,self.order_matcher_disabled)
+    self.log('PARAM','global_email_language'        ,self.options.global_email_language)
     self.log('PARAM','END')
 
 
-    from models import User, Deposit, DepositMethods, Order, Withdraw, Broker, Currency, Instrument, Ledger
+    from models import User, Deposit, DepositMethods, Order, Withdraw, Broker, \
+      Currency, Instrument, ApiAccess, Balance, Position, GreenAddresses
 
+    green_address_list = self.db_session.query(GreenAddresses)
+    for green_address_entity in green_address_list:
+      self.log('DB_ENTITY', 'GREEN_ADDRESS', green_address_entity)
 
     currencies = self.db_session.query(Currency)
     for currency in currencies:
@@ -97,6 +123,10 @@ class TradeApplication(object):
     users = self.db_session.query(User)
     for user in users:
       self.log('DB_ENTITY', 'USER', user)
+
+    api_access_list = self.db_session.query(ApiAccess)
+    for api_access_entity in api_access_list:
+      self.log('DB_ENTITY', 'API_ACCESS', api_access_entity)
 
     # log all users on the replay log
     brokers = self.db_session.query(Broker)
@@ -116,26 +146,31 @@ class TradeApplication(object):
     for withdraw in withdraws:
       self.log('DB_ENTITY', 'WITHDRAW', withdraw )
 
-    ledgers = self.db_session.query(Ledger)
-    for ledger in ledgers:
-      self.log('DB_ENTITY', 'LEDGER', ledger )
+    balance_list = self.db_session.query(Balance)
+    for balance_entity in balance_list:
+      self.log('DB_ENTITY', 'BALANCE', balance_entity )
+
+    position_list = self.db_session.query(Position)
+    for position_entity in position_list:
+      self.log('DB_ENTITY', 'POSITION', position_entity )
 
     orders = self.db_session.query(Order).filter(Order.status.in_(("0", "1"))).order_by(Order.created)
     for order in orders:
       self.log('DB_ENTITY','ORDER',order)
 
   def publish(self, key, data):
+    print key, data
     self.publish_queue.append([ key, data ])
 
   def run(self):
-    from bitex.message import JsonMessage, InvalidMessageException
+    from pyblinktrade.message import JsonMessage, InvalidMessageException
     from market_data_publisher import MarketDataPublisher
     from execution import OrderMatcher
     from models import Order
 
     orders = self.db_session.query(Order).filter(Order.status.in_(("0", "1"))).order_by(Order.created)
     for order in orders:
-      OrderMatcher.get( order.symbol  ).match(self.db_session, order)
+      OrderMatcher.get( order.symbol  ).match(self.db_session, order, self.order_matcher_disabled)
 
     while True:
       raw_message = self.input_socket.recv()
@@ -188,7 +223,7 @@ class TradeApplication(object):
             instrument = instruments[0]
 
             om = OrderMatcher.get(instrument)
-            response_message = MarketDataPublisher.generate_md_full_refresh( application.db_session, instrument, market_depth, om, entries, req_id, timestamp )
+            response_message = MarketDataPublisher.generate_md_full_refresh( self.db_session, instrument, market_depth, om, entries, req_id, timestamp )
             response_message = 'REP,' + json.dumps( response_message , cls=JsonEncoder)
           elif msg.isTradeHistoryRequest():
 
@@ -196,19 +231,20 @@ class TradeApplication(object):
               page_size   = msg.get('PageSize', 100)
               offset      = page * page_size
 
-              columns = [ 'TradeID'           , 'Market',  'Side', 'Price', 'Size',
-                          'Buyer'             , 'Seller', 'Created' ]
+              columns = [ 'TradeID' , 'Market',   'Side',          'Price',          'Size',
+                          'BuyerID' , 'SellerID', 'BuyerUsername' ,'SellerUsername', 'Created',
+                          'OrderId' , 'CounterOrderID']
 
-              trade_list = MarketDataPublisher.generate_trade_history(application.db_session, page_size, offset )
+              trade_list = MarketDataPublisher.generate_trade_history(self.db_session, page_size, offset )
 
-              response_message = 'REP,' + json.dumps( {
+              response_message = 'REP,' + json.dumps({
                   'MsgType'           : 'U33', # TradeHistoryResponse
                   'TradeHistoryReqID' : -1,
                   'Page'              : page,
                   'PageSize'          : page_size,
                   'Columns'           : columns,
                   'TradeHistoryGrp'   : trade_list
-              }, cls=JsonEncoder )
+              }, cls=JsonEncoder)
 
           else:
             response_message = self.session_manager.process_message( msg_header, session_id, msg )
@@ -232,8 +268,6 @@ class TradeApplication(object):
 
       # publish all publications
       for key, message in self.publish_queue:
-        self.log('OUT', 'TRADE_PUB', str([key, message]) )
-        self.publisher_socket.send_multipart( [str(key),  json.dumps(message, cls=JsonEncoder)] )
+        self.log('OUT', 'TRADE_PUB', str([ key, message]) )
+        self.publisher_socket.send_multipart( [ '^' + str(key) + '$' ,  json.dumps(message, cls=JsonEncoder)] )
       self.publish_queue = []
-
-application = TradeApplication.instance()

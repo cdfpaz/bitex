@@ -1,7 +1,7 @@
 __author__ = 'rodrigo'
 
 from models import Trade
-from trade_application import application
+from trade_application import TradeApplication
 
 class MarketDataPublisher(object):
   def __init__(self, market_depth, entry, instrument, handler):
@@ -31,6 +31,7 @@ class MarketDataPublisher(object):
         "MDEntryDate": order.created.date(),
         "MDEntryTime": order.created.time(),
         "OrderID": order.id,
+        "UserID": order.account_id,
         "Username": order.account_username,
         "Broker": order.broker_username
       })
@@ -40,7 +41,7 @@ class MarketDataPublisher(object):
         "MDBkTyp": '3', # Order Depth
         "MDIncGrp": entry_list
       }
-      application.publish( 'MD_INCREMENTAL_' + symbol + '.' + entry_type , md )
+      TradeApplication.instance().publish( 'MD_INCREMENTAL_' + symbol + '.' + entry_type , md )
 
   @staticmethod
   def publish_cancel_order(symbol, entry_type, order_position ):
@@ -55,7 +56,7 @@ class MarketDataPublisher(object):
         "MDEntryPositionNo": order_position,
         }]
     }
-    application.publish( 'MD_INCREMENTAL_' + symbol + '.' + entry_type , md )
+    TradeApplication.instance().publish( 'MD_INCREMENTAL_' + symbol + '.' + entry_type , md )
 
 
   @staticmethod
@@ -74,12 +75,13 @@ class MarketDataPublisher(object):
         "MDEntryDate": order.created.date(),
         "MDEntryTime": order.created.time(),
         "OrderID": order.id,
+        "UserID": order.account_id,
         "Username": order.account_username,
         "Broker": order.broker_username
 
       }]
     }
-    application.publish( 'MD_INCREMENTAL_' + symbol + '.' + entry_type , md )
+    TradeApplication.instance().publish( 'MD_INCREMENTAL_' + symbol + '.' + entry_type , md )
 
   @staticmethod
   def publish_trades(symbol, trades):
@@ -97,6 +99,8 @@ class MarketDataPublisher(object):
         "Side": trade.side,
         "SecondaryOrderID": trade.counter_order_id,
         "TradeID": trade.id,
+        "MDEntryBuyerID": trade.buyer_id,
+        "MDEntrySellerID": trade.seller_id,
         "MDEntryBuyer": trade.buyer_username,
         "MDEntrySeller": trade.seller_username,
       })
@@ -105,7 +109,7 @@ class MarketDataPublisher(object):
       "MDBkTyp": '3', # Order Depth
       "MDIncGrp": md_trades
     }
-    application.publish( 'MD_TRADE_' + symbol , md )
+    TradeApplication.instance().publish( 'MD_TRADE_' + symbol , md )
 
   @staticmethod
   def generate_trade_history( session, page_size = None, offset = None, sort_column = None, sort_order='ASC' ):
@@ -118,6 +122,8 @@ class MarketDataPublisher(object):
           trade.side,
           trade.price,
           trade.size,
+          trade.buyer_id,
+          trade.seller_id,
           trade.buyer_username,
           trade.seller_username,
           trade.created,
@@ -148,7 +154,7 @@ class MarketDataPublisher(object):
 
           entry_position += 1
 
-          entry_list.append( {
+          entry_list.append({
             "MDEntryType": entry_type,
             "MDEntryPositionNo": entry_position,
             "MDEntryID": order.id,
@@ -157,6 +163,7 @@ class MarketDataPublisher(object):
             "MDEntryDate": order.created.date(),
             "MDEntryTime": order.created.time(),
             "OrderID": order.id,
+            "UserID": order.account_id,
             "Username": order.account_username,
             "Broker": order.broker_username
           })
@@ -171,32 +178,5 @@ class MarketDataPublisher(object):
       "Symbol": symbol,
       "MDFullGrp": entry_list
     }
-    application.publish( 'MD_FULL_REFRESH_' + symbol , md )
-
+    TradeApplication.instance().publish( 'MD_FULL_REFRESH_' + symbol , md )
     return md
-
-
-#    ### Trades now are sent on TradeHistory Message
-#
-#    elif entry_type == '2':
-#      trades = Trade.get_last_trades(session, symbol, timestamp)
-#      trade_list = []
-#      for trade in  trades:
-#        trade_list.append({
-#          "MDEntryType": "2",  # Trade
-#          "Symbol": trade.symbol,
-#          "MDEntryPx": trade.price,
-#          "MDEntrySize": trade.size,
-#          "MDEntryDate": trade.created.date(),
-#          "MDEntryTime": trade.created.time(),
-#          "OrderID": trade.order_id,
-#          "Side": trade.side,
-#          "SecondaryOrderID": trade.counter_order_id,
-#          "TradeID": trade.id,
-#          "MDEntryBuyer": trade.buyer_username,
-#          "MDEntrySeller": trade.seller_username,
-#          })
-#      for trade in reversed(trade_list):
-#        entry_list.append(trade)
-
-
