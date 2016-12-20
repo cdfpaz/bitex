@@ -45,6 +45,7 @@ def main():
     'websocket_url': 'wss://127.0.0.1/trade/',
     'username': '',
     'password': '',
+    'broker_id': 5,
     'buy_fee': 0,
     'sell_fee': 0,
     'api_key': 'KEY',
@@ -59,16 +60,18 @@ def main():
   sell_fee      = int(config.get('b2u', 'sell_fee'))
   api_key       = config.get('b2u', 'api_key')
   api_secret    = config.get('b2u', 'api_secret')
+  broker_id     = config.getint('b2u',  'broker_id')
+  dest_market   = config.get('b2u',  'dest_market')
 
   print 'websocket_url:', websocket_url
   print 'username:', username
   print 'buy_fee:', buy_fee
   print 'sell_fee:', sell_fee
 
-  arbitrator = BlinkTradeArbitrator(username,password,websocket_url, 'BTCBRL')
+  arbitrator = BlinkTradeArbitrator( broker_id, username,password,websocket_url, dest_market)
   arbitrator.connect()
 
-  arbitrator.signal_order.connect(send_order_to_b2u)
+  #arbitrator.signal_order.connect(send_order_to_b2u)
 
   while True:
     try:
@@ -82,9 +85,9 @@ def main():
           continue
 
       try:
-        raw_data = urllib2.urlopen('http://www.bitcointoyou.com/API/orderbook.aspx').read()
-      except Exception:
-        print 'ERROR RETRIEVING ORDER BOOK'
+        raw_data = urllib2.urlopen('https://www.bitcointoyou.com/API/orderbook.aspx').read()
+      except Exception as e:
+        print 'ERROR RETRIEVING ORDER BOOK: ' + str(e)
         continue
 
 
@@ -99,7 +102,7 @@ def main():
         pass
 
       if bids_asks:
-        ask_list = [  [  int(float(fiat)*1e8 * (1. + sell_fee) ), int(float(btc) * 1e8) ]  for fiat,btc in reversed(bids_asks['asks']) ]
+        ask_list = [  [  int(float(fiat)*1e8 * (1. + sell_fee) ), int(float(btc) * 1e8) ]  for fiat,btc in bids_asks['asks'] ]
         bid_list = [  [  int(float(fiat)*1e8 * (1. - buy_fee) ), int(float(btc) * 1e8) ]  for fiat,btc in bids_asks['bids'] ]
 
         number_of_asks_to_remove_due_a_weird_bug = 0
