@@ -1,3 +1,6 @@
+#This documentation is outdated.
+You must be a Senior Python Developer in order to understand what is going on. Don't try to run an exchange without an expert.
+
 BlinkTrade
 =====
 
@@ -10,20 +13,21 @@ BlinkTrade - Open Source Exchange Platform
 #Get Started
 
 ```
-$ easy_install pyzmq
-$ easy_install tornado
-$ easy_install crypto
-$ easy_install sqlalchemy
-$ easy_install requests
-```
-
-or:
-
-```
 $ pip install -r requirements.txt
 ```
 
 #Build and Run
+
+Download and install the pyblinktrade package from https://github.com/blinktrade/pyblinktrade
+
+```
+cd ~
+cd pyblinktrade
+chmod +x setup.py
+sudo ./setup.py install
+```
+
+Download and install the frontend project from https://github.com/blinktrade/frontend.git
 
 ```
 $ cd ./jsdev
@@ -38,10 +42,16 @@ $ ./apps/mailer/main.py
 Matching engine and the core of the BitEx platform
 
 # Applications - Ws Gateway
-HTTP and WebSocket gateways
+The HTTP/WebSocket gateway is based on Tornado.  It relays HTTP or websocket API
+requests to the trade engine in order to place orders or fetching market data.
 
 # Applications - Mailer
-Mailing application
+The mailing application... sends mail. To that end, 
+it uses Mailchimp's transaction email solution, Mandrill.
+
+E-mail templates are stored under the templates/ dir,
+and which template to use (and the data to fill it out)
+are supplied by listening on the zeromq socket.
 
 # Translating
 
@@ -63,15 +73,21 @@ $ ./jsdev/build_release.sh  # recompile the application using the translated fil
 
 #Why the name of the folder is Bitex ?
 
-Bitex stands for Bitcoin EXchnage and it was the first that we came up it name of our platform, by mid 2014 a company called bitex.la was formed in Argentina and we were forced to change our name, this source code it is not related in any form to bitex.la.
+Bitex stands for Bitcoin EXchange and it was the first that we came up it name of our platform, by mid 2014 a company called bitex.la was formed in Argentina and we were forced to change our name, this source code it is not related in any form to bitex.la.
+
+## Contributing
+ 
+1. Fork it!
+2. Create your feature branch: `git checkout -b my-new-feature`
+3. Commit your changes: `git commit -am 'Add some feature'`
+4. Push to the branch: `git push origin my-new-feature`
+5. Submit a pull request
 
 #License
 
 **Code released under [the GNU GPL license](https://github.com/pinhopro/bitex/blob/master/LICENSE).**
 
 Copyright 2014 BitEx, LTDA. BitEx is a trademark maintained by BitEx, LTDA.
-
-- Bitex - Bolsa Brasileira de Moedas Criptografadas is a company of Clebson Derivan
 
 **VIOLATORS OF THE GNU GPL LICENSE WILL BE PROSECUTED TO THE FULL EXTENT OF THE LAW**
 **FREE SOFTWARE FOR FREE PEOPLE**
