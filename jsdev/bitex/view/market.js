@@ -1,11 +1,13 @@
 goog.provide('bitex.view.MarketView');
 goog.require('bitex.view.View');
 goog.require('bitex.ui.TradeHistory');
+goog.require('bitex.ui.MarketTradingView');
 goog.require('bitex.ui.MarketViewTable');
 goog.require('bitex.ui.MarketViewTable.EventType');
+goog.require('bitex.util');
 
 goog.require('bitex.templates');
-
+goog.require('bitex.util')
 goog.require('bitex.ui.SimpleChart');
 
 /**
@@ -39,6 +41,11 @@ bitex.view.MarketView.prototype.market_data_subscription_symbol_;
 bitex.view.MarketView.prototype.last_trades_table_;
 
 /**
+ * @type {bitex.ui.MarketTradingView}
+ */
+bitex.view.MarketView.prototype.market_trading_view_;
+
+/**
  * @type {bitex.ui.MarketViewTable}
  */
 bitex.view.MarketView.prototype.market_view_table_;
@@ -50,7 +57,14 @@ bitex.view.MarketView.prototype.simple_chart_;
 
 bitex.view.MarketView.prototype.enterView = function() {
   goog.base(this, 'enterView');
-  this.recreateComponents_();
+  var handler = this.getHandler();
+  var model = this.getApplication().getModel();
+
+  handler.listen( model,  bitex.model.Model.EventType.SET + 'SecurityList', this.recreateComponents_ );
+
+  if (goog.isDefAndNotNull(model.get('SecurityList') )) {
+    this.recreateComponents_();
+  }
 };
 
 bitex.view.MarketView.prototype.exitView = function() {
@@ -67,20 +81,32 @@ bitex.view.MarketView.prototype.recreateComponents_ = function() {
   var model = this.getApplication().getModel();
   var conn = this.getApplication().getBitexConnection() ;
 
+  var trading_view_el = goog.dom.getElement('market_trading_view');
+  if (goog.isDefAndNotNull(trading_view_el) && !goog.isDefAndNotNull(this.market_trading_view_)) {
+    this.market_trading_view_ = new bitex.ui.MarketTradingView(trading_view_el.getAttribute('data-symbol'));
+    this.market_trading_view_.render(trading_view_el);
+  }
+
   this.destroyComponents_();
 
   this.market_data_subscription_id_ = parseInt( 1e7 * Math.random() , 10 );
 
   this.market_data_subscription_symbol_ =  [];
-  goog.array.forEach(app.getModel().get('SecurityList')['Instruments'], function(instrument_info) {
-    this.market_data_subscription_symbol_.push(instrument_info['Symbol'] );
+  goog.array.forEach(model.get('SecurityList')['Instruments'], function(instrument_info) {
+    this.market_data_subscription_symbol_.push(instrument_info['Market'] + ':' + instrument_info['Symbol'] );
   }, this);
 
   this.market_view_table_ = new bitex.ui.MarketViewTable();
-  this.market_view_table_.setModel({id:'market_view', instruments: model.get('SecurityList')['Instruments']});
+  var market_view_table_model = {id:'market_view', instruments:[]};
+  goog.array.forEach(model.get('SecurityList')['Instruments'], function( instrument) {
+    if (instrument['Market'] == 'BLINK') {
+      market_view_table_model.instruments.push(instrument);
+    }
+  }, this);
+  this.market_view_table_.setModel(market_view_table_model);
   this.addChild(this.market_view_table_, true);
 
-  app.getModel().updateDom();
+  this.getApplication().getModel().updateDom();
 
   this.simple_chart_ = new bitex.ui.SimpleChart();
   this.simple_chart_.setModel({ symbol: model.get('SecurityList')['Instruments'][0]['Symbol'] });
@@ -88,7 +114,7 @@ bitex.view.MarketView.prototype.recreateComponents_ = function() {
 
   handler.listen(this.market_view_table_, bitex.ui.MarketViewTable.EventType.SELECT_SYMBOL, this.onSelectedSymbol_);
 
-  this.last_trades_table_ = new bitex.ui.TradeHistory();
+  this.last_trades_table_ = new bitex.ui.TradeHistory( bitex.util.getPseudoName );
 
   handler.listen(this.last_trades_table_,
                  bitex.ui.DataGrid.EventType.REQUEST_DATA,
@@ -101,12 +127,10 @@ bitex.view.MarketView.prototype.recreateComponents_ = function() {
   handler.listen( conn , bitex.api.BitEx.EventType.TRADING_SESSION_STATUS + '.' + this.market_data_subscription_id_, this.onBitexTradingSessionStatus_ );
   handler.listen( conn , bitex.api.BitEx.EventType.ORDER_BOOK_NEW_ORDER + '.' + this.market_data_subscription_id_, this.onBitexOrderBookNewOrder_ );
   handler.listen( conn , bitex.api.BitEx.EventType.TRADE + '.' + this.market_data_subscription_id_, this.onBitexTrade_ );
-  handler.listen( conn , bitex.api.BitEx.EventType.SECURITY_STATUS + '.' + this.market_data_subscription_id_, this.onBitexSecurityStatus_ );
 
   this.addChild(this.last_trades_table_, true);
 
   this.dispatchEvent(bitex.view.View.EventType.MARKET_DATA_SUBSCRIBE);
-  this.dispatchEvent(bitex.view.View.EventType.SECURITY_STATUS_SUBSCRIBE);
   this.market_view_table_.selectFirst();
 };
 
@@ -139,8 +163,6 @@ bitex.view.MarketView.prototype.destroyComponents_ = function( ) {
     handler.unlisten( conn , bitex.api.BitEx.EventType.TRADE + '.' + this.market_data_subscription_id_, this.onBitexTrade_ );
 
     this.dispatchEvent(bitex.view.View.EventType.MARKET_DATA_UNSUBSCRIBE);
-    this.dispatchEvent(bitex.view.View.EventType.SECURITY_STATUS_UNSUBSCRIBE);
-
   }
 
   this.removeChildren(true);
@@ -172,25 +194,6 @@ bitex.view.MarketView.prototype.onTradeHistoryTableRequestData_ = function(e) {
   conn.requestTradeHistory(this.market_data_subscription_id_, page, limit, undefined, filter );
 };
 
-bitex.view.MarketView.prototype.onBitexSecurityStatus_ = function(e) {
-  if (!goog.isDefAndNotNull(this.market_view_table_) ) {
-    return;
-  }
-    var msg = e.data;
-
-    var model = this.getApplication().getModel();
-    var currency = msg["Symbol"].substr(3);
-    var crypto_currency = msg["Symbol"].substr(0,3);
-
-    model.set('formatted_volume_buy_' + msg["Symbol"], this.getApplication().formatCurrency(msg["BuyVolume"]/1.e8,  currency, true ), true );
-    model.set('formatted_volume_sell_' + msg["Symbol"], this.getApplication().formatCurrency(msg["SellVolume"]/1.e8,  crypto_currency, true ), true );
-    model.set('formatted_min_' + msg["Symbol"], this.getApplication().formatCurrency(msg["LowPx"]/1.e8,  currency, true ), true );
-    model.set('formatted_max_' + msg["Symbol"], this.getApplication().formatCurrency(msg["HighPx"]/1.e8,  currency, true ), true );
-    model.set('formatted_last_price_' + msg["Symbol"], this.getApplication().formatCurrency(msg["LastPx"]/1.e8,  currency, true ), true );
-    model.set('formatted_bid_' + msg["Symbol"], this.getApplication().formatCurrency(msg["BestBid"]/1.e8,  currency, true ), true );
-    model.set('formatted_ask_' + msg["Symbol"], this.getApplication().formatCurrency(msg["BestAsk"]/1.e8,  currency, true ), true );
-};
-
 /**
  * @param {goog.events.Event} e
  */
@@ -199,16 +202,24 @@ bitex.view.MarketView.prototype.onBitexTrade_ = function(e) {
     return;
   }
   var msg = e.data;
-  var record = []; 
+  var record = [];
 
   record["TradeID"] = msg["TradeID"];
   record["Market"] = msg["Symbol"];
   record["Size"] = msg['MDEntrySize'];
   record["Price"] = msg['MDEntryPx'];
   record["Side"] = msg['Side'];
-  record["Buyer"] = msg['MDEntryBuyer'];
-  record["Seller"] = msg['MDEntrySeller'];
+  record["Buyer"] = msg['MDEntryBuyerID'];
+  record["Seller"] = msg['MDEntrySellerID'];
+  if (goog.isDefAndNotNull( msg['MDEntryBuyer'] )) {
+    record["BuyerUsername"] = msg['MDEntryBuyer'];
+  }
+  if (goog.isDefAndNotNull( msg['MDEntrySeller'] )) {
+    record["SellerUsername"] = msg['MDEntrySeller'];
+  }
   record["Created"] = msg['MDEntryDate'] + " " + msg['MDEntryTime'];
+
+  record["Timestamp"] = bitex.util.convertServerUTCDateTimeStrToTimestamp(msg['MDEntryDate'], msg['MDEntryTime']);
 
   this.last_trades_table_.insertOrUpdateRecord(record, 0);
 };
@@ -223,7 +234,15 @@ bitex.view.MarketView.prototype.onTradeHistoryReponse_ = function(e) {
   }
 
   var msg = e.data;
-  this.last_trades_table_.setResultSet( msg['TradeHistoryGrp'], msg['Columns'] );
+  msg['Columns'].push('Timestamp');
+  goog.array.forEach(msg['TradeHistoryGrp'], function(trade_record) {
+    var record_created =  trade_record[msg['Columns'].indexOf('Created')];
+    var record_timestamp = bitex.util.convertServerUTCDateTimeStrToTimestamp(record_created.split(' ')[0],
+                                                                             record_created.split(' ')[1]);
+    trade_record.push(record_timestamp);
+  });
+
+  this.last_trades_table_.setResultSet(msg['TradeHistoryGrp'], msg['Columns']);
 };
 
 
@@ -234,7 +253,6 @@ bitex.view.MarketView.prototype.onBitexOrderBookNewOrder_ = function(e) {
     var index = msg['MDEntryPositionNo'] - 1;
     var price =  msg['MDEntryPx']/1e8;
     var qty = msg['MDEntrySize']/1e8;
-    var username = msg['Username'];
     var broker = msg['Broker'];
     var orderId =  msg['OrderID'];
     var side = msg['MDEntryType'];

@@ -25,14 +25,22 @@ bitex.view.BrokerView.prototype.enterDocument = function() {
   handler.listen(model, bitex.model.Model.EventType.SET + 'Broker', this.onModelSetBroker_);
 };
 
+bitex.view.BrokerView.prototype.enterView = function() {
+  goog.base(this, 'enterView');
+  this.onModelSetBroker_();
+};
 
 /**
  * @param {goog.events.Event} e
  * @private
  */
 bitex.view.BrokerView.prototype.onModelSetBroker_ = function(e) {
-  var broker = e.data;
   var model = this.getApplication().getModel();
+  var broker = model.get('Broker');
+  if (!goog.isDefAndNotNull(broker)) {
+    return;
+  }
+
   var broker_list = model.get('BrokerList');
 
   var fmt = new goog.i18n.NumberFormat(goog.i18n.NumberFormat.Format.PERCENT);
@@ -41,6 +49,8 @@ bitex.view.BrokerView.prototype.onModelSetBroker_ = function(e) {
 
   broker['FormattedTransactionFeeBuy'] = fmt.format(broker['TransactionFeeBuy'] / 10000);
   broker['FormattedTransactionFeeSell'] = fmt.format(broker['TransactionFeeSell'] / 10000);
+  broker['FormattedTakerTransactionFeeBuy'] = fmt.format(broker['TakerTransactionFeeBuy'] / 10000);
+  broker['FormattedTakerTransactionFeeSell'] = fmt.format(broker['TakerTransactionFeeSell'] / 10000);
 
   goog.soy.renderElement(goog.dom.getElement('my_broker'), bitex.templates.BrokerView, {
     show_title: true,

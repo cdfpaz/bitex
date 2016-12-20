@@ -25,10 +25,32 @@ var MSG_CUSTOMER_TABLE_COLUMN_USERNAME = goog.getMsg('Username');
  */
 var MSG_CUSTOMER_TABLE_COLUMN_VERIFIED = goog.getMsg('Verified');
 
+
 /**
  * @desc Column Verified YES of the Customer Table
  */
-var MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES = goog.getMsg('Yes');
+var MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LI = goog.getMsg('Yes - Level I');
+
+/**
+ * @desc Column Verified YES of the Customer Table
+ */
+var MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LII = goog.getMsg('Yes - Level II');
+
+/**
+ * @desc Column Verified YES of the Customer Table
+ */
+var MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LIII = goog.getMsg('Yes - Level III');
+
+/**
+ * @desc Column Verified YES of the Customer Table
+ */
+var MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LIV = goog.getMsg('Yes - Level IV');
+
+
+/**
+ * @desc Column Verified PENDING of the Customer Table
+ */
+var MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_PROGRESS = goog.getMsg('Progress');
 
 /**
  * @desc Column Verified PENDING of the Customer Table
@@ -98,12 +120,21 @@ bitex.ui.Customers = function( opt_domHelper) {
       'label': MSG_CUSTOMER_TABLE_COLUMN_VERIFIED,
       'sortable': false,
       'formatter': function(s){
-        if (s == 2) {
-          return MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES;
-        } else if (s == 1) {
-          return MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_PENDING;
-        } else {
-          return MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_NO;
+        switch(s) {
+          case 0:
+            return MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_NO;
+          case 1:
+            return MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_PENDING;
+          case 2:
+            return MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_PROGRESS;
+          case 3:
+            return MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LI;
+          case 4:
+            return MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LII;
+          case 5:
+            return MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LIII;
+          case 6:
+            return MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LIV;
         }
       },
       'classes': function() { return goog.getCssName(bitex.ui.Customers.CSS_CLASS, 'verified'); }
@@ -129,15 +160,12 @@ bitex.ui.Customers = function( opt_domHelper) {
       'label': MSG_CUSTOMER_TABLE_COLUMN_ACTION,
       'sortable': true,
       'formatter': function(id, row_set_obj){
-        /**
-         * @desc Label for deposit button inside the customer table in broker view.
-         */
-        var MSG_CUSTOMER_TABLE_ACTION_DETAILS = goog.getMsg('details');
 
-        var data_row = goog.json.serialize( row_set_obj );
+        var data_row = goog.json.serialize(row_set_obj);
 
-        var classes = "btn btn-mini btn-primary btn-deposit";
-        return goog.dom.createDom( 'button', { 'class':classes, 'data-row': data_row}, MSG_CUSTOMER_TABLE_ACTION_DETAILS );
+        return goog.soy.renderAsElement(bitex.templates.CustomerDetailButton, {
+          dataRow: data_row
+        });
       },
       'classes': function() { return goog.getCssName(bitex.ui.Customers.CSS_CLASS, 'last-login'); }
     }
@@ -156,12 +184,28 @@ bitex.ui.Customers = function( opt_domHelper) {
    */
   var MSG_CUSTOMERS_TABLE_SEARCH_PLACEHOLDER = goog.getMsg('Username or email...');
 
+
+  /**
+   * @desc Customers filter all select option
+   */
+  var MSG_CUSTOMERS_LIST_BUTTON_FILTER_ALL = goog.getMsg('All');
+
   var options = {
     'title': MSG_CUSTOMERS_TABLE_TITLE,
     'rowClassFn':this.getRowClass,
     'columns': grid_columns,
     'showSearch': true,
-    'searchPlaceholder': MSG_CUSTOMERS_TABLE_SEARCH_PLACEHOLDER
+    'searchPlaceholder': MSG_CUSTOMERS_TABLE_SEARCH_PLACEHOLDER,
+    'wrapperHeight': 600,
+    'buttonFilters': [
+      { 'label': MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_PENDING,    'value': 1 },
+      { 'label': MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_NO,         'value': 0 },
+      { 'label': MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_PROGRESS,   'value': 2 },
+      { 'label': MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LI,     'value': 3 },
+      { 'label': MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LII,    'value': 4 },
+      { 'label': MSG_CUSTOMER_TABLE_COLUMN_VERIFIED_YES_LIII,   'value': 5 },
+      { 'label': MSG_CUSTOMERS_LIST_BUTTON_FILTER_ALL,          'value': 'all'}
+    ]
   };
   bitex.ui.DataGrid.call(this,  options , opt_domHelper);
 };

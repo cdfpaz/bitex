@@ -2,11 +2,14 @@ goog.provide('bitex.ui.OrderManager');
 goog.provide('bitex.ui.OrderManager.Status');
 goog.provide('bitex.ui.OrderManagerEvent');
 
+goog.require('bitex.ui.OrderManager.templates');
+
 goog.require('goog.dom');
 goog.require('goog.object');
 goog.require('bitex.ui.DataGrid');
 goog.require('goog.ui.registry');
 
+goog.require('bitex.util');
 goog.require('goog.dom.TagName');
 
 
@@ -87,23 +90,60 @@ var MSG_ORDER_MANAGER_ACTION_CANCEL_ORDER = goog.getMsg('cancel');
 
 
 /**
- * @param {string} opt_mode. Defaults to advanced mode
- * @param {number} opt_blinkDelay. Defaults to 700 milliseconds
+ * @desc Order Manager Status description
+ */
+var MSG_ORDER_MANAGER_STATUS_PENDING = goog.getMsg('Pending');
+
+/**
+ * @desc Order Manager Status description
+ */
+var MSG_ORDER_MANAGER_STATUS_NEW = goog.getMsg('New');
+
+/**
+ * @desc Order Manager Status description
+ */
+var MSG_ORDER_MANAGER_STATUS_PARTIALL_FILL = goog.getMsg('Partially filled');
+
+/**
+ * @desc Order Manager Status description
+ */
+var MSG_ORDER_MANAGER_STATUS_FILL = goog.getMsg('Filled');
+
+/**
+ * @desc Order Manager Status description
+ */
+var MSG_ORDER_MANAGER_STATUS_CXL = goog.getMsg('Cancelled');
+
+/**
+ * @desc Order Manager Status description
+ */
+var MSG_ORDER_MANAGER_STATUS_REJECTED = goog.getMsg('Rejected');
+
+
+/**
+ * @param {string=} opt_mode. Defaults to advanced mode
+ * @param {boolean=} opt_openOrdersTitle.
+ * @param {string=} opt_filterOrder
+ * @param {number=} opt_blinkDelay. Defaults to 700 milliseconds
  * @param {goog.dom.DomHelper=} opt_domHelper
  * @constructor
  * @extends {goog.ui.Component}
  */
-bitex.ui.OrderManager = function(opt_mode, opt_blinkDelay, opt_domHelper) {
+bitex.ui.OrderManager = function(opt_mode, opt_openOrdersTitle, opt_filterOrder, opt_blinkDelay, opt_domHelper) {
   this.mode_ = opt_mode || 'advanced';
   this.blink_delay_ = opt_blinkDelay || 700;
+  this.filter_order_ = opt_filterOrder || 'OECA';
+
 
   var grid_columns_simple = [
     {
-      'property': 'OrderID',
-      'label': MSG_ORDER_MANAGER_ACTIVITY_TABLE_COLUMN_ID,
+      'property': 'OrderDate',
+      'label': MSG_ORDER_MANAGER_ACTIVITY_TABLE_COLUMN_ORDER_DATE,
       'sortable': false,
-      'formatter': function(s, rowSet) { return rowSet['ClOrdID']},
-      'classes': function() { return goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'order-id'); }
+      'formatter': function(s, rowSet) {
+        return  bitex.util.convertServerUTCDateTimeStrToTimestamp(s.substr(0, 10), s.substr(11)).toLocaleString();
+      },
+      'classes': function() { return goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'order-date'); }
     },{
       'property': 'Side',
       'label': MSG_ORDER_MANAGER_ACTIVITY_TABLE_COLUMN_DESCRIPTION,
@@ -131,29 +171,30 @@ bitex.ui.OrderManager = function(opt_mode, opt_blinkDelay, opt_domHelper) {
       'label': MSG_ORDER_MANAGER_ACTIVITY_TABLE_COLUMN_ACTIONS,
       'sortable': false,
       'formatter': function(id, row_set_obj){
-        var classes = "btn btn-mini btn-danger";
-        var attributes = { 'class':classes, 'data-action':'cancel', 'data-client-order-id': id } ;
+        var attributes = { dataClientOrderId: id, dataOrderId:null } ;
 
         if ( goog.isDefAndNotNull(row_set_obj) ) {
-          attributes['data-order-id'] = row_set_obj["OrderID"];
-
+          attributes = { dataClientOrderId: id, dataOrderId:row_set_obj["OrderID"]} ;
           if (row_set_obj["LeavesQty"] == 0) {
             return "";
           }
         }
 
-        return goog.dom.createDom( 'a', attributes, MSG_ORDER_MANAGER_ACTION_CANCEL_ORDER );
+        return goog.soy.renderAsElement(bitex.ui.OrderManager.templates.CancelOrder, attributes);
       },
       'classes': function() { return goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'actions'); }
     }
   ];
 
   var grid_columns_advanced = [
-    {
-      'property': 'OrderID',
-      'label': MSG_ORDER_MANAGER_ACTIVITY_TABLE_COLUMN_ID,
+     {
+      'property': 'OrderDate',
+      'label': MSG_ORDER_MANAGER_ACTIVITY_TABLE_COLUMN_ORDER_DATE,
       'sortable': false,
-      'classes': function() { return goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'order-id'); }
+      'formatter': function(s, rowSet) {
+        return  bitex.util.convertServerUTCDateTimeStrToTimestamp(s.substr(0, 10), s.substr(11)).toLocaleString();
+      },
+      'classes': function() { return goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'order-date'); }
     },{
       'property': 'OrdStatus',
       'label': MSG_ORDER_MANAGER_ACTIVITY_TABLE_COLUMN_STATUS,
@@ -207,18 +248,16 @@ bitex.ui.OrderManager = function(opt_mode, opt_blinkDelay, opt_domHelper) {
       'label': MSG_ORDER_MANAGER_ACTIVITY_TABLE_COLUMN_ACTIONS,
       'sortable': false,
       'formatter': function(id, row_set_obj){
-        var classes = "btn btn-mini btn-danger";
-        var attributes = { 'class':classes, 'data-action':'cancel', 'data-client-order-id': id } ;
+        var attributes = { dataClientOrderId: id, dataOrderId:null } ;
 
         if ( goog.isDefAndNotNull(row_set_obj) ) {
-          attributes['data-order-id'] = row_set_obj["OrderID"];
-
+          attributes = { dataClientOrderId: id, dataOrderId:row_set_obj["OrderID"]} ;
           if (row_set_obj["LeavesQty"] == 0) {
             return "";
           }
         }
 
-        return goog.dom.createDom( 'a', attributes, MSG_ORDER_MANAGER_ACTION_CANCEL_ORDER );
+        return goog.soy.renderAsElement(bitex.ui.OrderManager.templates.CancelOrder, attributes);
       },
       'classes': function() { return goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'actions'); }
     }
@@ -228,13 +267,61 @@ bitex.ui.OrderManager = function(opt_mode, opt_blinkDelay, opt_domHelper) {
   /** @desc Order manager table tittle */
   var MSG_ORDER_MANAGER_TABLE_TITLE = goog.getMsg('My orders');
 
+  /** @desc Order manager table tittle */
+  var MSG_ORDER_MANAGER_TABLE_TITLE_OPEN_ORDERS = goog.getMsg('My open orders');
+
+
+  /**
+   * @desc All option on the Orders filters
+   */
+  var MSG_ORDER_MANAGER_TABLE_BUTTON_FILTER_ALL = goog.getMsg('All');
+
+  /**
+   * @desc Open Orders option on the Orders filters
+   */
+  var MSG_ORDER_MANAGER_TABLE_BUTTON_FILTER_OPEN_ORDERS = goog.getMsg('Open');
+
+  /**
+   * @desc Open Orders option on the Orders filters
+   */
+  var MSG_ORDER_MANAGER_TABLE_BUTTON_FILTER_FILLED = goog.getMsg('Filled');
+
+  /**
+   * @desc Cancelled option on the Orders filters
+   */
+  var MSG_ORDER_MANAGER_TABLE_BUTTON_FILTER_CANCELED = goog.getMsg('Cancelled');
+
+
   var options = {
     'rowIDFn': this.getRowID ,
     'rowClassFn':this.getRowClass,
     'columns': grid_columns_advanced,
     'title': MSG_ORDER_MANAGER_TABLE_TITLE,
-    'showSearch': false
+    'showSearch': false,
+    'buttonFilters': []
   };
+
+  var getFilterButton = function(button_type){
+    switch (button_type){
+      case 'A':
+        return { 'label': MSG_ORDER_MANAGER_TABLE_BUTTON_FILTER_ALL,         'value': 'all'};
+      case 'O':
+        return { 'label': MSG_ORDER_MANAGER_TABLE_BUTTON_FILTER_OPEN_ORDERS, 'value': 'has_leaves_qty eq 1'};
+      case 'E':
+        return { 'label': MSG_ORDER_MANAGER_TABLE_BUTTON_FILTER_FILLED,      'value': 'has_cum_qty eq 1'};
+      case 'C':
+        return { 'label': MSG_ORDER_MANAGER_TABLE_BUTTON_FILTER_CANCELED,    'value': 'has_cxl_qty eq 1'};
+    }
+  };
+
+  for (var i in this.filter_order_) {
+    var button_filter_type =  this.filter_order_[i];
+    options['buttonFilters'].push(getFilterButton(button_filter_type));
+  }
+
+  if (opt_openOrdersTitle) {
+    options['title'] = MSG_ORDER_MANAGER_TABLE_TITLE_OPEN_ORDERS;
+  }
 
   if (this.mode_ == 'simple') {
     options['columns'] = grid_columns_simple;
@@ -244,41 +331,16 @@ bitex.ui.OrderManager = function(opt_mode, opt_blinkDelay, opt_domHelper) {
 };
 goog.inherits(bitex.ui.OrderManager, bitex.ui.DataGrid);
 
-
-/**
- * @desc Order Manager Status description
- */
-var MSG_ORDER_MANAGER_STATUS_PENDING = goog.getMsg('Pending');
-
-/**
- * @desc Order Manager Status description
- */
-var MSG_ORDER_MANAGER_STATUS_NEW = goog.getMsg('New');
-
-/**
- * @desc Order Manager Status description
- */
-var MSG_ORDER_MANAGER_STATUS_PARTIALL_FILL = goog.getMsg('Partially filled');
-
-/**
- * @desc Order Manager Status description
- */
-var MSG_ORDER_MANAGER_STATUS_FILL = goog.getMsg('Filled');
-
-/**
- * @desc Order Manager Status description
- */
-var MSG_ORDER_MANAGER_STATUS_CXL = goog.getMsg('Cancelled');
-
 /**
  * @enum {string}
  */
 bitex.ui.OrderManager.Status = {
-  '-': MSG_ORDER_MANAGER_STATUS_PENDING,
+  'A': MSG_ORDER_MANAGER_STATUS_PENDING,
   '0': MSG_ORDER_MANAGER_STATUS_NEW,
   '1': MSG_ORDER_MANAGER_STATUS_PARTIALL_FILL,
   '2': MSG_ORDER_MANAGER_STATUS_FILL,
-  '4': MSG_ORDER_MANAGER_STATUS_CXL
+  '4': MSG_ORDER_MANAGER_STATUS_CXL,
+  '8': MSG_ORDER_MANAGER_STATUS_REJECTED
 };
 
 /**
@@ -328,7 +390,7 @@ bitex.ui.OrderManager.prototype.getRowClass = function(row_set) {
 
   var class_status;
   switch(status) {
-    case '-':
+    case 'A':
       class_status = goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'pending');
       break;
     case '0':
@@ -341,7 +403,15 @@ bitex.ui.OrderManager.prototype.getRowClass = function(row_set) {
       class_status = goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'fill');
       break;
     case '4':
-      class_status = goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'cancel');
+      var cum_qty = row_set['CumQty'];
+      if (goog.isDefAndNotNull(cum_qty) && cum_qty > 0 ) {
+        class_status = goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'fill');
+      } else {
+        class_status = goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'cancel');
+      }
+      break;
+    case '8':
+      class_status = goog.getCssName(bitex.ui.OrderManager.CSS_CLASS, 'rejected');
       break;
   }
 

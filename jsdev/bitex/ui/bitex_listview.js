@@ -30,7 +30,7 @@ bitex.ui.ListView = function (options, opt_domHelper) {
     rowClassFn: options['rowClassFn'] || goog.nullFunction,
     rowFormatterFn: options['rowFormatterFn'] || goog.nullFunction,
     currentPage: options['currentPage'] || 0,
-    limit: options['limit'] || 100,
+    limit: options['limit'] || 20,
     blinkDelay: options['blinkDelay'] || 700,
     showSearch: options['showSearch'] || false,
     searchPlaceholder: options['searchPlaceholder'] || false
@@ -276,7 +276,7 @@ bitex.ui.ListView.prototype.insertOrUpdateRecord = function(record, opt_index) {
     goog.dom.appendChild(row_element, rowFormatterFn(record ));
   }
 
-  var blink_class = 'warning';
+  var blink_class = 'md-blink';
   goog.dom.classes.add( row_element,  blink_class );
   goog.Timer.callOnce( function(){
     goog.dom.classes.remove( row_element,  blink_class );
@@ -337,8 +337,6 @@ bitex.ui.ListView.prototype.appendResultSet  = function(resultSet, columns) {
   }, this );
 
   if ( elements.length == this.getModel().limit ) {
-    console.log('reached limit');
-
     /**
      * @desc Load more button label on list view
      */

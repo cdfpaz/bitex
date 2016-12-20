@@ -6,8 +6,10 @@ goog.require('bitex.util');
 
 goog.require('goog.dom.forms');
 goog.require('goog.style');
+goog.require('goog.Uri.QueryData');
 goog.require('bitex.model.Model');
 goog.require('bitex.templates');
+goog.require('uniform.Uniform');
 
 /**
  * @param {*} app
@@ -41,6 +43,7 @@ bitex.view.SignupView.prototype.enterDocument = function(){
   var broker_el = goog.dom.getElement('id_signup_broker');
 
   var countries = bitex.util.getCountries();
+
 
   goog.object.forEach( countries, function(country_info, country_code ) {
     var country = country_info;
@@ -76,16 +79,21 @@ bitex.view.SignupView.prototype.enterDocument = function(){
     this.onSelectState_(model.get('DefaultState'));
   }
 
-
   handler.listen(button_signup, goog.ui.Component.EventType.ACTION, this.onSignupButtonClick_);
 };
 
 bitex.view.SignupView.prototype.getUsername = function() {
   return goog.dom.forms.getValue( goog.dom.getElement("id_signup_username") );
 };
+bitex.view.SignupView.prototype.setUsername = function(value) {
+  return goog.dom.forms.setValue(goog.dom.getElement("id_signup_username"), value);
+}
 
 bitex.view.SignupView.prototype.getEmail = function() {
   return goog.dom.forms.getValue( goog.dom.getElement("id_signup_email") );
+};
+bitex.view.SignupView.prototype.setEmail = function(value) {
+  goog.dom.forms.setValue(goog.dom.getElement("id_signup_email"), value);
 };
 
 bitex.view.SignupView.prototype.getPassword = function() {
@@ -95,9 +103,15 @@ bitex.view.SignupView.prototype.getPassword = function() {
 bitex.view.SignupView.prototype.getState = function() {
   return goog.dom.forms.getValue( goog.dom.getElement("id_signup_state") );
 };
+bitex.view.SignupView.prototype.setState = function(value) {
+  return goog.dom.forms.setValue(goog.dom.getElement("id_signup_state"), value);
+};
 
 bitex.view.SignupView.prototype.getCountry = function() {
-  return goog.dom.forms.getValue( goog.dom.getElement("id_signup_country") );
+  return goog.dom.forms.getValue(goog.dom.getElement("id_signup_country"));
+};
+bitex.view.SignupView.prototype.setCountry = function(value) {
+  return goog.dom.forms.setValue(goog.dom.getElement("id_signup_country"), value);
 };
 
 bitex.view.SignupView.prototype.getBroker = function() {
@@ -156,10 +170,47 @@ bitex.view.SignupView.prototype.onSignupButtonClick_ =  function(e){
     var MSG_PASSWORDS_DOES_NOT_MATCH = goog.getMsg('Passwords does not match');
 
     this.getApplication().showDialog(MSG_PASSWORDS_DOES_NOT_MATCH );
-    return;
   }
 
-  this.dispatchEvent( bitex.view.SignupView.EventType.SIGNUP );
+  var dlg_content = bitex.templates.ConfirmEmailSignupContentDialog({
+    email: email
+  });
+
+  var handler = this.getHandler();
+
+  /**
+   * @desc Signup email confirmation alert title
+   */
+  var MSG_CONFIRM_EMAIL_TITLE_DIALOG = goog.getMsg('Confirm Your Email');
+  var dlg_ = this.getApplication().showDialog(dlg_content, MSG_CONFIRM_EMAIL_TITLE_DIALOG, bitex.ui.Dialog.ButtonSet.createOkCancel());
+
+  var email_confirmed = goog.dom.getElement('id_email_confirm_field');
+
+  if (goog.isDefAndNotNull(email_confirmed)) {
+    email_confirmed.focus();
+  }
+
+  email_confirmed.onpaste = function(e) {
+    e.preventDefault();
+  };
+
+  handler.listen(dlg_, goog.ui.Dialog.EventType.SELECT, function(e) {
+    if (e.key == 'ok') {
+      var email_confirmed_value = goog.dom.forms.getValue(email_confirmed);
+      if (email_confirmed_value != email) {
+        /**
+         * @desc Alert error on email confirmation signup
+         */
+        var MSG_EMAIL_ERROR_MACHT = goog.getMsg("Emails doesn't match");
+        this.getApplication().showNotification('error', MSG_EMAIL_ERROR_MACHT);
+
+        e.stopPropagation();
+        e.preventDefault();
+      } else {
+        this.dispatchEvent(bitex.view.SignupView.EventType.SIGNUP);
+      }
+    }
+  }, this);
 };
 
 
@@ -229,6 +280,8 @@ bitex.view.SignupView.prototype.onBrokerList_ = function(e) {
     this.onChangeBroker_();
   }
 
+  this.getQueryString_();
+
 };
 
 /**
@@ -273,6 +326,8 @@ bitex.view.SignupView.prototype.onChangeBroker_ = function(e){
 
       broker['FormattedTransactionFeeBuy'] = fmt.format(broker['TransactionFeeBuy'] / 10000);
       broker['FormattedTransactionFeeSell'] = fmt.format(broker['TransactionFeeSell'] / 10000);
+      broker['FormattedTakerTransactionFeeBuy'] = fmt.format(broker['TakerTransactionFeeBuy'] / 10000);
+      broker['FormattedTakerTransactionFeeSell'] = fmt.format(broker['TakerTransactionFeeSell'] / 10000);
 
       goog.soy.renderElement(goog.dom.getElement('signup_broker_details'), bitex.templates.BrokerView, {
         show_title: false,
@@ -392,4 +447,30 @@ bitex.view.SignupView.prototype.onSelectState_ = function( selected_country, sel
     goog.dom.forms.setValue( goog.dom.getElement('id_signup_broker'), '' + last_available_broker );
   }
   this.onChangeBroker_();
+};
+
+/**
+ * @private
+ */
+bitex.view.SignupView.prototype.getQueryString_ = function(){
+  var queryString = new goog.Uri(window.location.href);
+  var username = queryString.getParameterValue('username');
+  var email = queryString.getParameterValue('email');
+  var country = queryString.getParameterValue('country');
+  var state = queryString.getParameterValue('state');
+
+  if(goog.isDefAndNotNull(username)) {
+    this.setUsername(username);
+  }
+  if(goog.isDefAndNotNull(email)) {
+    this.setEmail(email);
+  }
+  if(goog.isDefAndNotNull(country)) {
+    this.setCountry(country);
+    this.onSelectCountry_(country);
+  }
+  if(goog.isDefAndNotNull(state)) {
+    this.setState(state);
+    this.onSelectState_(state);
+  }
 };

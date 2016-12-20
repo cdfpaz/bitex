@@ -45,26 +45,34 @@ bitex.view.View.EventType = {
 
   SEND_ORDER: 'send_order',
   CANCEL_ORDER: 'cancel_order',
+  CANCEL_REPLACE_ORDER:'cancel_replace_order',
 
   REQUEST_WITHDRAW: 'request_withdraw',
   CONFIRM_WITHDRAW: 'confirm_withdraw',
   PROCESS_WITHDRAW: 'process_withdraw',
+  USER_CANCEL_WITHDRAW: 'cancel_withdraw',
+  USER_COMMENT: 'comment_withdraw',
 
   DEPOSIT_REQUEST: 'request_deposit',
   PROCESS_DEPOSIT: 'process_deposit',
+  INSTANTANEOUS_DEPOSIT: 'instantaneous_deposit',
 
+  SHOW_KYC: 'show_kyc',
   SHOW_QR: 'show_qr',
   UPLOAD_RECEIPT: 'upload_receipt',
   SHOW_RECEIPT: 'show_receipt' ,
 
+  CHANGE_EMAIL: 'change_email',
+  UPDATE_PROFILE: 'update_profile',
   SET_VERIFIED: 'set_verified',
-  SET_NOT_VERIFIED: 'set_not_verified',
   SET_WITHDRAW_EMAIL: 'set_withdraw_email',
 
-  ENABLE_TWOFACTOR: 'two_factor_enable',
-  DISABLE_TWOFACTOR: 'two_factor_disable',
-  RESET_TWOFACTOR: 'reset_two_factor'
+  FILE_VIEW: 'file_view',
 
+  ALGO_PARAMS: 'algo_params',
+
+  ENABLE_TWOFACTOR: 'two_factor_enable',
+  DISABLE_TWOFACTOR: 'two_factor_disable'
 };
 
 
@@ -142,7 +150,6 @@ bitex.view.View.prototype.logger_ =
 /** @inheritDoc */
 bitex.view.View.prototype.enterDocument = function() {
   goog.base(this, 'enterDocument');
-  var handler = this.getHandler();
 };
 
 

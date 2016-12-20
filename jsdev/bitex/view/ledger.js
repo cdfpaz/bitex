@@ -4,6 +4,7 @@ goog.require('bitex.view.View');
 
 goog.require('bitex.ui.LedgerActivity');
 
+goog.require('bitex.util');
 goog.require('goog.json');
 
 /**
@@ -54,7 +55,7 @@ bitex.view.LedgerView.prototype.destroyComponents_ = function( ) {
                      this.onLedgerTableRequestData_);
 
     handler.unlisten(this.getApplication().getBitexConnection(),
-                     bitex.api.BitEx.EventType.ORDER_LIST_RESPONSE,
+                     bitex.api.BitEx.EventType.LEDGER_LIST_RESPONSE + '.' + this.request_id_,
                      this.onLedgerListResponse_);
 
   }
@@ -84,14 +85,6 @@ bitex.view.LedgerView.prototype.recreateComponents_ = function() {
   if (model.get('IsBroker')) {
     button_filters = [];
 
-    goog.array.forEach(model.get('Broker')['BrokerCurrencies'], function(currency_code){
-      button_filters.push(
-          {
-            'label':model.get('Broker')['ShortName']  + ':' + this.getApplication().getCurrencyDescription(currency_code),
-            'value':goog.json.serialize( {'currency':currency_code, 'broker_id':model.get('Broker')['BrokerID']  } )
-          });
-    }, this );
-
 
     /**
      * @desc label on ledge filter
@@ -106,6 +99,39 @@ bitex.view.LedgerView.prototype.recreateComponents_ = function() {
           });
     }, this );
 
+    if (goog.isDefAndNotNull( model.get('Profile')['Accounts'] )) {
+      goog.object.forEach( model.get('Profile')['Accounts'], function(account_data, account_name) {
+        goog.array.forEach(model.get('Profile')['BrokerCurrencies'], function(currency_code){
+
+          button_filters.push(
+              {
+                'label': account_name + ':' + this.getApplication().getCurrencyDescription(currency_code),
+                'value':goog.json.serialize( {'currency':currency_code, 'account_id': account_data[0]  } )
+              });
+
+        }, this);
+
+      }, this);
+    }
+
+
+
+    goog.array.forEach(model.get('Broker')['BrokerCurrencies'], function(currency_code){
+      button_filters.push(
+          {
+            'label':model.get('Broker')['ShortName']  + ':' + this.getApplication().getCurrencyDescription(currency_code),
+            'value':goog.json.serialize( {'currency':currency_code, 'broker_id':model.get('Broker')['BrokerID']  } )
+          });
+    }, this );
+
+
+    goog.object.forEach(model.get('Profile')['AllowedMarkets'], function(market, symbol) {
+      button_filters.push(
+          {
+            'label': MSG_MY_CUSTOMERS_LABEL + ':' + this.getApplication().getCurrencyDescription('MMP_' + symbol),
+            'value':goog.json.serialize( {'currency':'MMP_' + symbol, 'broker_id':model.get('UserID') } )
+          });
+     }, this);
 
   } else {
     goog.array.forEach(model.get('BrokerCurrencies'), function(currency_code){
@@ -115,12 +141,24 @@ bitex.view.LedgerView.prototype.recreateComponents_ = function() {
             'value':goog.json.serialize( {'currency':currency_code, 'broker_id':model.get('Broker')['BrokerID']  } )
           });
     }, this );
+
+    if (model.get('ShowMMP')) {
+      goog.object.forEach(model.get('Broker')['AllowedMarkets'], function(market, symbol) {
+        button_filters.push(
+            {
+              'label':this.getApplication().getCurrencyDescription('MMP_' + symbol),
+              'value':goog.json.serialize( {'currency':'MMP_' + symbol, 'broker_id':model.get('Broker')['BrokerID']  } )
+            });
+       }, this);
+    }
   }
 
 
   this.request_id_ = parseInt( 1e7 * Math.random() , 10 );
 
-  this.ledger_table_ =  new bitex.ui.LedgerActivity(button_filters, model.get('IsBroker') );
+  this.ledger_table_ =  new bitex.ui.LedgerActivity(button_filters,
+                                                    bitex.util.getPseudoName,
+                                                    model.get('IsBroker'));
 
   handler.listen(this.ledger_table_,
                  bitex.ui.DataGrid.EventType.REQUEST_DATA,
@@ -182,6 +220,10 @@ bitex.view.LedgerView.prototype.onLedgerTableRequestData_ = function(e) {
         if (goog.isDefAndNotNull(filter_obj['broker_id'])) {
           brokerID = filter_obj['broker_id'];
         }
+        if (goog.isDefAndNotNull(filter_obj['account_id'])) {
+          userID = filter_obj['account_id'];
+        }
+
       } catch (ex) {
         filters.push(filter);
       }
