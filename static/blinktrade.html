@@ -32,9 +32,6 @@
 
     <meta charset="utf-8">
 
-    <link rel="canonical" href=""/>
-    <script type="text/javascript" src="//apis.google.com/js/plusone.js"></script>
-
     <!--Bootstrap-->
     <link href="/themes/default/css/bootstrap-combined.min.css" rel="stylesheet">
     <link href="/themes/default/css/font-awesome.min.css" rel="stylesheet">
@@ -793,13 +790,6 @@ Further more, all the safety measures of the hot wallet are run by blockchain.in
         </div>
       </div>
 
-      <div id="algotrading" class="bitex-view">
-        <div class="section-title">
-          <h3 class="bitex-view-title">Algorithm Trading</h3>
-        </div>
-        <div class="bitex-view-content"></div>
-      </div>
-
 
       <div id="offerbook" class="bitex-view">
         <div class="section-title">
@@ -1112,11 +1102,6 @@ Further more, all the safety measures of the hot wallet are run by blockchain.in
               <i data-switch-view="history" class="icon-list-alt"></i> Orders history</a>
           </li>
 
-          <li id="menu-algotrading">
-            <a href="" data-switch-view="algotrading">
-              <i data-switch-view="algotrading" class="icon-cog"></i> Algo Trading</a>
-          </li>
-
           <li id="menu-ledger">
             <a href="" data-switch-view="ledger">
               <i data-switch-view="ledger" class="icon-list"></i> Ledger</a>
@@ -1201,14 +1186,9 @@ Further more, all the safety measures of the hot wallet are run by blockchain.in
     <footer class="footer">
       <div class="container">
         <p>
-          
           <a href="" data-switch-view="admin">admin</a> |
           Latency: <span class="bitex-model" data-model-key="latency">0</span> ms |
-          Version: cef70be |
-          
-		      <a href="http://blinktrade.com/" target="_blank">© 2014 BlinkTrade Inc</a>
-          | <a href="https://github.com/blinktrade/" target="_blank">Proudly 100% open source <span class="bitex-model" data-model-key="JSVersion"></span></a>
-          | <a href="http://nytm.org/made-in-nyc/" target="_blank">Made with <span style="color: #d11f0d;font-size: 19px;">♥</span> in NYC</a> 
+          Version: cef70be 
         </p>
       </div>
     </footer>
@@ -1221,10 +1201,7 @@ Further more, all the safety measures of the hot wallet are run by blockchain.in
         var country_code = "US";
         var blinktrade_api = "localhost";
         var symbol = "BTCUSD";
-
-        var remittance_box = { 'BRL':[ ['BitFinexUSD',        'USD', 'BITFINEX_BTCUSD_BEST_BID / 100000000', 'BITFINEX_BTCUSD_BEST_ASK / 100000000'  ], ['Dólar Bitcoin',      'BRL', 'BLINK_BTCBRL_BEST_BID /  BITFINEX_BTCUSD_BEST_ASK', 'BLINK_BTCBRL_BEST_ASK /  BITFINEX_BTCUSD_BEST_BID'  ], ['Dólar Turismo',      'BRL', 'UOL_USDBRT_BEST_BID / 100000000', 'UOL_USDBRT_BEST_ASK / 100000000' ] ], 'USD':[ ['BitFinexUSD',        'USD', 'BITFINEX_BTCUSD_BEST_BID / 100000000', 'BITFINEX_BTCUSD_BEST_ASK / 100000000'  ], ['BitStampUSD',        'USD', 'BITSTAMP_BTCUSD_BEST_BID / 100000000', 'BITSTAMP_BTCUSD_BEST_ASK / 100000000'  ], ['KrakenUSD',          'USD', 'KRAKEN_BTCUSD_BEST_BID / 100000000', 'KRAKEN_BTCUSD_BEST_ASK / 100000000'  ], ['itBitUSD',           'USD', 'ITBIT_BTCUSD_BEST_BID / 100000000', 'ITBIT_BTCUSD_BEST_ASK / 100000000'  ] ], 'VEF':[ ['BitFinexUSD',        'USD', 'BITFINEX_BTCUSD_BEST_BID / 100000000', 'BITFINEX_BTCUSD_BEST_ASK / 100000000'  ], ['USD -> BTC -> VEF',  'VEF', 'BLINK_BTCVEF_BEST_BID /  BITFINEX_BTCUSD_BEST_ASK', 'BLINK_BTCVEF_BEST_ASK /  BITFINEX_BTCUSD_BEST_BID' ] , ['BRL -> BTC -> VEF',  'VEF', 'BLINK_BTCVEF_BEST_BID /  BLINK_BTCBRL_BEST_ASK',    'BLINK_BTCVEF_BEST_ASK /  BLINK_BTCBRL_BEST_BID' ], ['VEF -> BTC -> CLP',  'CLP', 'BLINK_BTCCLP_BEST_BID /  BLINK_BTCVEF_BEST_ASK',    'BLINK_BTCCLP_BEST_ASK /  BLINK_BTCVEF_BEST_BID' ] ], 'CLP':[ ['BitFinexUSD',        'USD', 'BITFINEX_BTCUSD_BEST_BID / 100000000', 'BITFINEX_BTCUSD_BEST_ASK / 100000000'  ], ['USD -> BTC -> CLP',  'CLP', 'BLINK_BTCCLP_BEST_BID /  BITFINEX_BTCUSD_BEST_ASK', 'BLINK_BTCCLP_BEST_ASK /  BITFINEX_BTCUSD_BEST_BID' ] , ['BRL -> BTC -> CLP',  'CLP', 'BLINK_BTCCLP_BEST_BID /  BLINK_BTCBRL_BEST_ASK',    'BLINK_BTCCLP_BEST_ASK /  BLINK_BTCBRL_BEST_BID' ] , ['VEF -> BTC -> CLP',  'CLP', 'BLINK_BTCCLP_BEST_BID /  BLINK_BTCVEF_BEST_ASK',    'BLINK_BTCCLP_BEST_ASK /  BLINK_BTCVEF_BEST_BID' ] ], 'PKR':[ ['BitFinexUSD',        'USD', 'BITFINEX_BTCUSD_BEST_BID / 100000000', 'BITFINEX_BTCUSD_BEST_ASK / 100000000'  ], ['USD -> BTC -> PKR',  'PKR', 'BLINK_BTCPKR_BEST_BID /  BITFINEX_BTCUSD_BEST_ASK', 'BLINK_BTCPKR_BEST_ASK /  BITFINEX_BTCPKR_BEST_BID' ] ] };
-
-        _app = new BlinkTradeApp(broker_id, remittance_box,  country_code, symbol);
+        _app = new BlinkTradeApp(broker_id, country_code, symbol);
         _app.run(blinktrade_api);
       })();
     </script>

@@ -476,7 +476,7 @@ bitex.app.BlinkTrade.prototype.run = function(host_api) {
   var marketView          = new bitex.view.MarketView(this);
   var rankingView         = new bitex.view.RankingView(this);
   var tradingView         = new bitex.view.TradingView(this);
-  var algorithmTradingView= new bitex.view.AlgorithmTradingView(this);
+//  var algorithmTradingView= new bitex.view.AlgorithmTradingView(this);
   var toolBarView         = new bitex.view.ToolBarView(this);
   var sideBarView         = new bitex.view.SideBarView(this);
   var ledgerView          = new bitex.view.LedgerView(this);
@@ -497,7 +497,7 @@ bitex.app.BlinkTrade.prototype.run = function(host_api) {
   this.views_.addChild( signUpView          );
   this.views_.addChild( forgotPasswordView  );
   this.views_.addChild( tradingView         );
-  this.views_.addChild( algorithmTradingView);
+//  this.views_.addChild( algorithmTradingView);
   this.views_.addChild( offerBookView       );
   this.views_.addChild( historyView         );
   this.views_.addChild( depositView         );
@@ -538,7 +538,7 @@ bitex.app.BlinkTrade.prototype.run = function(host_api) {
   this.router_.addView( '(signin)'                      , loginView           );
   this.router_.addView( '(signup)'                      , signUpView          );
   this.router_.addView( '(forgot_password)'             , forgotPasswordView  );
-  this.router_.addView( '(algotrading)'                 , algorithmTradingView);
+//  this.router_.addView( '(algotrading)'                 , algorithmTradingView);
   this.router_.addView( '(trading)'                     , tradingView         );
   this.router_.addView( '(offerbook)'                   , offerBookView       );
   this.router_.addView( '(history)'                     , historyView         );
@@ -4728,6 +4728,10 @@ bitex.app.BlinkTrade.prototype.adjustBrokerData_ = function(broker_info) {
   },this);
   broker_info['BrokerCurrencies'] = broker_currencies;
   broker_info['AllowedMarkets'] = allowed_markets;
+
+  broker_info['TakerTransactionFeeBuy'] = 0;
+  broker_info['TakerTransactionFeeSell'] = 0;
+
   broker_info['FormattedTransactionFeeBuy'] = percent_fmt.format(broker_info['TransactionFeeBuy'] / 10000);
   broker_info['FormattedTransactionFeeSell'] = percent_fmt.format(broker_info['TransactionFeeSell'] / 10000);
   broker_info['FormattedTakerTransactionFeeBuy'] = percent_fmt.format(broker_info['TakerTransactionFeeBuy'] / 10000);
