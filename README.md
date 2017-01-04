@@ -1,7 +1,7 @@
-BlinkTrade
+Bitex
 =====
 
-BlinkTrade - Open Source Exchange Platform
+Bitex - Open Source Exchange Platform
 
 ![Demo](https://s30.postimg.org/b8fx6ou9t/out.gif)
 
