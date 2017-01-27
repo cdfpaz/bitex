@@ -5,8 +5,6 @@ Bitex - Open Source Exchange Platform
 
 [![Demo](https://s30.postimg.org/b8fx6ou9t/out.gif)](https://github.com/bzero/bitex)]
 
-[![more info](https://s27.postimg.org/p0pab0t9v/Whats_App_Image_2017_01_05_at_20_10_54.jpg)](https://youtu.be/31NbVlWyxiI)]
-
 [How to install on Google Compute Engine](https://github.com/blinktrade/bitex/wiki/HOW-TO-DEPLOY-BLINKTRADE-ON-GOOGLE-COMPUTE-ENGINE) 
 
 #Get Started
