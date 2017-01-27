@@ -26,7 +26,7 @@ from trade_application import TradeApplication
 
 from sqlalchemy.ext.declarative import DeclarativeMeta
 
-import onetimepass
+import pyotp
 
 
 def get_datetime_now(timezone=None):
@@ -316,7 +316,8 @@ class User(Base):
           if second_factor is None or second_factor == '':
             raise NeedSecondFactorException
 
-          if not onetimepass.valid_totp(token=int(second_factor), secret=user.two_factor_secret):
+          totp = pyotp.TOTP(user.two_factor_secret)
+          if not totp.verify(int(second_factor)):
             raise NeedSecondFactorException
 
         # update the last login
@@ -337,14 +338,16 @@ class User(Base):
         setattr(self, field, field_value)
 
   def check_second_factor(self, second_factor):
-    if not onetimepass.valid_totp(token=int(second_factor), secret=self.two_factor_secret):
+    totp = pyotp.TOTP(self.two_factor_secret)
+    if not totp.verify(int(second_factor)):
       return False
     return True
 
   def enable_two_factor(self, enable, secret, second_factor):
     if enable:
+      totp = pyotp.TOTP(secret)
       if secret and second_factor is not None and second_factor.isdigit() and\
-         onetimepass.valid_totp(token=int(second_factor), secret=secret):
+         totp.verify(int(second_factor)):
         self.two_factor_enabled = True
         self.two_factor_secret = secret
         return self.two_factor_secret
